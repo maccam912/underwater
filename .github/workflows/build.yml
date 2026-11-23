@@ -1,0 +1,167 @@
+name: Test and release Underwater
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  revisions:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    outputs:
+      batches: ${{ steps.plan.outputs.batches }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: plan
+        run: python3 .github/scripts/pushed_commits.py
+
+  build:
+    needs: revisions
+    name: Check ${{ matrix.batch.label }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: ${{ fromJSON(needs.revisions.outputs.batches) }}
+    env:
+      COMMIT_BATCH: ${{ toJSON(matrix.batch.commits) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/underwater/godot-4.7.2
+          key: underwater-godot-4.7.2-linux-${{ github.event_name == 'pull_request' && 'editor' || 'templates' }}-${{ hashFiles('.github/scripts/install-godot.sh') }}
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        if: github.event_name != 'pull_request'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install verified Godot release
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            bash .github/scripts/install-godot.sh
+          else
+            bash .github/scripts/install-godot.sh --export
+          fi
+      - name: Run gameplay and regression tests
+        run: python3 .github/scripts/build_commits.py test
+      - name: Install Android build tools
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Export tested commits for four platforms
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          : "${ANDROID_KEYSTORE_BASE64:?Missing ANDROID_KEYSTORE_BASE64}"
+          : "${GODOT_ANDROID_KEYSTORE_RELEASE_USER:?Missing ANDROID_KEY_ALIAS}"
+          : "${GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD:?Missing ANDROID_KEY_PASSWORD}"
+          umask 077
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/underwater.keystore"
+          trap 'rm -f "$GODOT_ANDROID_KEYSTORE_RELEASE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$GODOT_ANDROID_KEYSTORE_RELEASE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
+          python3 .github/scripts/build_commits.py export
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && github.event_name != 'pull_request' && hashFiles('build/ci-releases/*/SHA256SUMS.txt') != '' }}
+        with:
+          name: release-${{ matrix.batch.label }}
+          path: build/ci-releases/
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+  native:
+    needs: [revisions, build]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && !github.event.deleted }}
+    name: Launch ${{ matrix.runner }} · ${{ matrix.batch.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, macos-15]
+        batch: ${{ fromJSON(needs.revisions.outputs.batches) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ matrix.batch.label }}
+          path: releases
+      - name: Launch packaged title for each built revision
+        shell: bash
+        run: python3 .github/scripts/native_smoke.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && hashFiles('native-passes/*/*.sha256') != '' }}
+        with:
+          name: passed-${{ matrix.runner }}-${{ matrix.batch.label }}
+          path: native-passes/
+          retention-days: 3
+
+  publish:
+    needs: [revisions, build, native]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: ${{ fromJSON(needs.revisions.outputs.batches) }}
+    # Serialize retries and simultaneous pushes for the same revision.
+    concurrency:
+      group: underwater-release-${{ matrix.batch.label }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ matrix.batch.label }}
+          path: releases
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: passed-*-${{ matrix.batch.label }}
+          path: native-passes
+          merge-multiple: true
+      - name: Publish verified assets by source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_BATCH: ${{ toJSON(matrix.batch.commits) }}
+        run: bash .github/scripts/publish.sh
+
+  latest:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # Each job considers every published build, so one pending refresh is enough.
+    concurrency:
+      group: underwater-latest-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Mark the highest published build as Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/update-latest.sh
