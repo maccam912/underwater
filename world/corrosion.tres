@@ -1,0 +1,15 @@
+[gd_resource type="NoiseTexture2D" load_steps=2 format=3]
+
+[sub_resource type="FastNoiseLite" id="Noise_corrosion"]
+noise_type = 3
+seed = 815
+frequency = 0.029
+fractal_octaves = 4
+fractal_gain = 0.56
+
+[resource]
+width = 256
+height = 256
+seamless = true
+normalize = true
+noise = SubResource("Noise_corrosion")

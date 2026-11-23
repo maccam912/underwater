@@ -1,34 +1,35 @@
 extends Control
 
 signal command(action: String)
-const HEAD = preload("res://ui/fonts/BarlowCondensed-Bold.ttf")
-const BODY = preload("res://ui/fonts/Barlow-Regular.ttf")
-const MONO = preload("res://ui/fonts/CourierPrime-Regular.ttf")
-const INK := Color("#10292d")
-const DEEP := Color("#0b2024")
-const PAPER := Color("#e6e4d6")
-const PALE := Color("#b2c9c1")
-const TEAL := Color("#79a7a2")
-const AMBER := Color("#f0bc69")
-const RULE := Color("#4c7273")
-const FILM = preload("res://ui/curtain.gdshader")
+
+const TYPE := preload("res://ui/fonts/CourierPrime-Regular.ttf")
+const HAND := preload("res://ui/fonts/Kalam-Regular.ttf")
+const CLOTH := preload("res://art/kept_logbook.webp")
+const SLATE := preload("res://art/dive_slate.webp")
+const PROP_LIGHT := preload("res://ui/curtain.gdshader")
+
+const PENCIL := Color("#342b22")
+const FADED := Color("#524637")
+const BIRO := Color("#2e3838")
+const STAMP := Color("#703b29")
+const CHALK := Color("#d0c5a9")
+const DIM := Color("#aba694")
+const SHADOW := Color("#141614")
 
 var mode := ""
 var view := {}
 var page: Control
 var touch := false
-var edge := 32.0
-var right_edge := 32.0
-var top_edge := 18.0
-var bottom_edge := 18.0
-var depth_text: Label
-var destination_text: Label
+var edge := 26.0
+var right_edge := 26.0
+var top_edge := 12.0
+var bottom_edge := 14.0
 var context_button: Button
 var radio_text: Label
 var joystick := Vector2.ZERO
 var joystick_origin := Vector2.ZERO
-var bearing := 0.0
 var in_reach := false
+var lamp_on := true
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -41,25 +42,24 @@ func _resized() -> void:
 func display(new_mode: String, data: Dictionary) -> void:
 	mode = new_mode
 	view = data
-	touch = bool(view.get("touch", false))
+	touch = bool(view.get("touch",false))
+	in_reach = false
 	rebuild()
 
 func _safe_edges() -> void:
-	edge = 32
-	right_edge = 32
-	top_edge = 18
-	bottom_edge = 18
-	if not OS.has_feature("mobile"):
-		return
-	var safe := DisplayServer.get_display_safe_area()
-	var physical := DisplayServer.screen_get_size()
-	if safe.size.x <= 0 or physical.x <= 0:
-		return
-	var scale_factor := size.x / physical.x
-	edge = maxf(edge, safe.position.x * scale_factor + 10)
-	right_edge = maxf(right_edge, (physical.x - safe.end.x) * scale_factor + 10)
-	top_edge = maxf(top_edge, safe.position.y * scale_factor + 6)
-	bottom_edge = maxf(bottom_edge, (physical.y - safe.end.y) * scale_factor + 6)
+	edge = 26
+	right_edge = 26
+	top_edge = 12
+	bottom_edge = 14
+	if OS.has_feature("mobile"):
+		var safe := DisplayServer.get_display_safe_area()
+		var physical := DisplayServer.screen_get_size()
+		if safe.size.x > 0 and physical.x > 0:
+			var ratio := size.x / physical.x
+			edge = maxf(edge,safe.position.x * ratio+8)
+			right_edge = maxf(right_edge,(physical.x-safe.end.x) * ratio+8)
+			top_edge = maxf(top_edge,safe.position.y * ratio+5)
+			bottom_edge = maxf(bottom_edge,(physical.y-safe.end.y) * ratio+5)
 
 func rebuild() -> void:
 	if not is_inside_tree() or size.x < 1:
@@ -73,200 +73,217 @@ func rebuild() -> void:
 	add_child(page)
 	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	context_button = null
-	depth_text = null
-	destination_text = null
 	radio_text = null
 	match mode:
 		"title": _title()
 		"board": _board()
 		"log": _logbook()
 		"pause": _pause()
-		"dive": _dive()
+		"dive","tool": _underwater()
 	queue_redraw()
 
-func _box(x: float,y: float,w: float,h: float,color: Color) -> ColorRect:
-	var item := ColorRect.new()
-	item.color = color
-	item.position = Vector2(x,y)
-	item.size = Vector2(w,h)
-	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	page.add_child(item)
-	return item
-
-func _text(value: String, x: float, y: float, width: float, height: float, font: Font, pixels: int, color: Color, align := HORIZONTAL_ALIGNMENT_LEFT, wrap := false) -> Label:
-	var item := Label.new()
-	item.text = value
+func _text(words: String, at: Vector2, area: Vector2, font: Font, pixels: int, color: Color, wrap := false) -> Label:
+	var label := Label.new()
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if wrap:
-		item.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	item.add_theme_font_override("font",font)
-	item.add_theme_font_size_override("font_size",pixels)
-	item.add_theme_color_override("font_color",color)
-	item.horizontal_alignment = align
-	item.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	item.position = Vector2(x,y)
-	item.size = Vector2(width,height)
-	item.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	page.add_child(item)
-	return item
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.text = words
+	label.add_theme_font_override("font",font)
+	label.add_theme_font_size_override("font_size",pixels)
+	label.add_theme_color_override("font_color",color)
+	label.add_theme_constant_override("line_spacing",-3)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.position = at
+	label.size = area
+	page.add_child(label)
+	return label
 
-func _style(fill: Color, border: Color) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = fill
-	style.border_color = border
-	style.set_border_width_all(1)
-	style.content_margin_left = 14
-	style.content_margin_right = 14
-	return style
+func _ink_line(points: PackedVector2Array, color: Color, thickness := 1.0) -> void:
+	var mark := Line2D.new()
+	mark.width = thickness
+	mark.default_color = color
+	mark.points = points
+	mark.antialiased = true
+	page.add_child(mark)
 
-func _button(value: String, action: String, x: float,y: float,w: float,h: float, primary := false, pixels := 22) -> Button:
+func _rule(at: Vector2, width: float, ink := Color("#514630a6")) -> void:
+	_ink_line([at,at+Vector2(width*0.42,0.4),at+Vector2(width,0)],ink)
+
+func _button(words: String, action: String, at: Vector2, area: Vector2, font: Font, pixels: int, ink: Color, on_paper := true) -> Button:
 	var button := Button.new()
 	button.name = action
-	button.text = value
-	button.add_theme_font_override("font", HEAD)
-	button.add_theme_font_size_override("font_size", pixels)
-	for kind in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]:
-		button.add_theme_color_override(kind, INK if primary else PAPER)
-	button.add_theme_color_override("font_disabled_color", TEAL)
-	button.add_theme_stylebox_override("normal", _style(AMBER if primary else Color("#163034ef"), AMBER if primary else RULE))
-	button.add_theme_stylebox_override("hover", _style(Color("#ffd095") if primary else Color("#2d4d4e"), PAPER))
-	button.add_theme_stylebox_override("pressed", _style(Color("#d8a158") if primary else Color("#1d494b"), AMBER))
-	button.add_theme_stylebox_override("disabled", _style(DEEP, RULE))
-	var focus := _style(Color.TRANSPARENT, PAPER)
-	focus.set_border_width_all(2)
+	button.text = words
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.position = at
+	button.size = area
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.add_theme_font_override("font",font)
+	button.add_theme_font_size_override("font_size",pixels)
+	button.add_theme_color_override("font_color",ink)
+	button.add_theme_color_override("font_disabled_color",FADED)
+	var hover := STAMP if on_paper else Color("#e2d7b9")
+	for theme_color in ["font_hover_color","font_pressed_color","font_focus_color"]:
+		button.add_theme_color_override(theme_color,hover)
+	for key in ["normal","disabled","pressed","hover"]:
+		button.add_theme_stylebox_override(key,StyleBoxEmpty.new())
+	var focus := StyleBoxFlat.new()
+	focus.bg_color = Color.TRANSPARENT
+	focus.border_color = Color(ink,0.5)
+	focus.border_width_bottom = 1
 	button.add_theme_stylebox_override("focus",focus)
-	button.position = Vector2(x,y)
-	button.size = Vector2(w,h)
 	button.pressed.connect(func(): command.emit(action))
 	page.add_child(button)
 	return button
 
-func _curtain() -> void:
-	var film := _box(0,0,size.x,size.y,Color.WHITE)
-	var shader := ShaderMaterial.new()
-	shader.shader = FILM
-	film.material = shader
-
-func _brand(x: float,y: float) -> void:
-	_box(x,y+1,5,16,AMBER)
-	_box(x+8,y+5,5,12,AMBER)
-	_box(x+16,y+9,5,8,AMBER)
-	_text("KESTREL   /   SUBSEA OPERATIONS",x+32,y-3,310,24,MONO,15,PALE)
+func _surface(texture: Texture2D, at: Vector2, area: Vector2, tilt: float) -> void:
+	page.pivot_offset = at+area*0.5
+	page.rotation = deg_to_rad(tilt)
+	var image := TextureRect.new()
+	image.texture = texture
+	image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	image.position = at
+	image.size = area
+	image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lamp := ShaderMaterial.new()
+	lamp.shader = PROP_LIGHT
+	image.material = lamp
+	page.add_child(image)
 
 func _title() -> void:
-	_curtain()
-	var x := edge + 10
-	var y := size.y * 0.30
-	_brand(x,top_edge+8)
-	_text("Underwater",x-3,y-20,530,114,HEAD,102,PAPER)
-	_box(x,y+97,39,3,AMBER)
-	_text("Maintenance watch",x,y+111,410,35,BODY,29,PAPER)
-	_text("East jacket   /   North Sea",x,y+151,440,28,MONO,17,PALE)
-	_button("RESUME WATCH    ›" if view.resume else "OPEN DIVE SHEET    ›","start",x,y+209,242,57,true)
-	var fy := size.y-bottom_edge-39
-	_box(x,fy,size.x-x-right_edge,1,Color("#53716f99"))
-	_text("KST–04     /     BELL OPERATIONS",x,fy+8,390,25,MONO,14,PALE)
-	_text("STORAGE DEPTH    126 m",size.x-right_edge-244,fy+8,244,25,MONO,14,PAPER,HORIZONTAL_ALIGNMENT_RIGHT)
+	var origin := Vector2(edge+15, size.y-bottom_edge-307)
+	var dimensions := Vector2(367,306)
+	_surface(CLOTH,origin,dimensions,-3.6)
+	var heading := _text("Underwater",origin+Vector2(42,54),Vector2(310,80),HAND,52,PENCIL)
+	heading.rotation = deg_to_rad(0.9)
+	_text("Kestrel   /   east jacket",origin+Vector2(49,147),Vector2(299,27),TYPE,17,CHALK)
+	_text("Bell 2,   126 metres",origin+Vector2(51,174),Vector2(290,32),HAND,24,CHALK)
+	var words := "Resume watch" if view.resume else "Open dive sheet"
+	_button(words+"   →","start",origin+Vector2(48,222),Vector2(291,64),HAND,29,Color("#eee0b8"),false)
+	_rule(origin+Vector2(48,272),222,Color("#ddd2b27a"))
 
-func _sheet(title: String, sub: String) -> Vector2:
-	_curtain()
-	var x := edge + 10
-	var y := maxf(top_edge+4,(size.y-502)*0.5)
-	_box(x,y,540,4,AMBER)
-	_box(x,y+4,540,471,Color("#10282bf4"))
-	_text(sub,x+22,y+15,494,24,MONO,15,PALE)
-	_text(title,x+20,y+36,500,67,HEAD,52,PAPER)
-	_box(x+22,y+108,496,1,RULE)
-	return Vector2(x+22,y)
+func _sheet() -> Vector2:
+	var origin := Vector2(edge+11,(size.y-494)*0.5)
+	_surface(SLATE,origin,Vector2(533,494),-1.1)
+	return origin+Vector2(43,0)
+
+func _heading(p: Vector2, identifier: String, title: String) -> void:
+	_text(identifier,p+Vector2(0,57),Vector2(449,24),TYPE,15,FADED)
+	_text(title,p+Vector2(-1,80),Vector2(440,53),HAND,38,BIRO)
+	_rule(p+Vector2(0,134),448)
 
 func _board() -> void:
-	var p := _sheet("Dive sheet", "KST–04    /    WATCH %02d    /    BELL 2" % view.watch)
-	_text("EAST JACKET   /   AVAILABLE WORK",p.x,p.y+119,494,27,MONO,16,AMBER)
+	var p := _sheet()
+	_heading(p,"BELL 2    EAST JACKET    126 m","Diver’s sheet")
+	_text("Watch %02d" % view.watch,p+Vector2(322,85),Vector2(125,34),TYPE,20,STAMP)
 	for i in 2:
+		var y := 151+i*66
 		var done: bool = view.done[i]
-		var y := p.y+156+i*89
-		var wording := ["A2     Wall thickness survey","B4     Fit survey clamp"][i] as String
-		var b := _button(wording,"job%d"%i,p.x,y,496,65,false,25)
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var wording := ["A2   Wall thickness","B4   Fit survey clamp"][i] as String
+		var b := _button(wording,"job%d"%i,p+Vector2(2,y),Vector2(447,58),TYPE,22,PENCIL)
 		b.disabled = done
-		var status := "FILED" if done else "TAKE  ›"
-		if i == view.job and not done:
-			status = "RESUME  ›"
-		_text(status,p.x+327,y+17,151,30,MONO,16,TEAL if done else AMBER,HORIZONTAL_ALIGNMENT_RIGHT)
-	var desc := str(view.message)
-	_text(desc,p.x,p.y+328,496,54,BODY,20,PAPER,HORIZONTAL_ALIGNMENT_LEFT,true)
-	_button("HANDOVER BOOK","log",p.x,p.y+395,210,57)
-	if view.done[0] and view.done[1]:
-		_button("NEXT WATCH    ›","next",p.x+225,p.y+395,271,57,true)
-	else:
-		_button("TITLE","title",p.x+351,p.y+395,145,57)
+		var status := "Filed" if done else ("Resume →" if i==view.job else "Take →")
+		var status_label := _text(status,p+Vector2(333,y+9),Vector2(110,38),HAND,25,STAMP if done else BIRO)
+		status_label.rotation = deg_to_rad(-3 if done else -1)
+		_rule(p+Vector2(1,y+56),447)
+	_text(str(view.message),p+Vector2(2,289),Vector2(444,70),HAND,23,BIRO,true)
+	_rule(p+Vector2(0,374),447)
+	_button("Handover book","log",p+Vector2(0,387),Vector2(215,64),HAND,26,BIRO)
+	_rule(p+Vector2(1,436),150,BIRO)
+	var both_done: bool = view.done[0] and view.done[1]
+	var words := "Next watch →" if both_done else "Close book"
+	var act := "next" if both_done else "title"
+	_button(words,act,p+Vector2(272,387),Vector2(178,64),HAND,26,BIRO)
+	_rule(p+Vector2(274,436),139 if both_done else 128,BIRO)
 
 func _logbook() -> void:
-	var p := _sheet("Handover book","KST–04    /    BELL COPY")
-	_text("FROM THE PREVIOUS WATCH",p.x,p.y+120,492,26,MONO,16,AMBER)
-	_text("“Two clean marks at A2. Carrier was still in our basket. Left them for you to look at.”  — Mara",p.x,p.y+155,493,69,BODY,22,PAPER,HORIZONTAL_ALIGNMENT_LEFT,true)
-	_box(p.x,p.y+242,496,1,RULE)
-	_text("LAST SIGNED ENTRIES",p.x,p.y+254,490,23,MONO,15,TEAL)
-	var lines: Array = view.history
-	if lines.is_empty():
-		_text("Your first sheet is still open.",p.x,p.y+285,490,30,BODY,21,PAPER)
+	var p := _sheet()
+	_heading(p,"BELL COPY    /    KESTREL","Handover")
+	_text("Two clean marks at A2. Carrier was still in our basket. Left them for you to look at.  — Mara",p+Vector2(1,144),Vector2(446,93),HAND,23,BIRO,true)
+	_rule(p+Vector2(0,249),447)
+	_text("SIGNED SHEETS",p+Vector2(1,259),Vector2(430,24),TYPE,16,FADED)
+	var entries: Array = view.history
+	if entries.is_empty():
+		_text("First sheet still open.",p+Vector2(2,286),Vector2(439,45),HAND,23,BIRO)
 	else:
-		for i in mini(3,lines.size()):
-			_text(str(lines[lines.size()-1-i]),p.x,p.y+282+i*30,495,29,BODY,19,PAPER)
-	_button("BACK TO DIVE SHEET","board",p.x,p.y+395,232,57,true)
+		for i in mini(2,entries.size()):
+			_text(str(entries[entries.size()-1-i]),p+Vector2(2,284+i*49),Vector2(446,48),TYPE,16,PENCIL,true)
+	_button("←  Dive sheet","board",p+Vector2(0,387),Vector2(233,64),HAND,27,BIRO)
+	_rule(p+Vector2(1,437),153,BIRO)
 
 func _pause() -> void:
-	var p := _sheet("Holding position","HARDLINE    /    BELL 2")
-	_text("Your line is tended. Take your time.",p.x,p.y+122,490,40,BODY,23,PALE)
-	_button("CONTINUE DIVE    ›","continue",p.x,p.y+179,496,58,true)
-	_button("FOLLOW LINE BACK TO BELL","recover",p.x,p.y+251,496,58)
-	_button("SAVE & RETURN TO TITLE","title",p.x,p.y+323,496,58)
-	_text("Watch progress is saved aboard this device.",p.x,p.y+407,496,34,BODY,19,PALE)
-
-func _dive() -> void:
-	var x := edge
-	var y := top_edge
-	_box(x,y,266,68,Color("#0a2227df"))
-	_box(x,y,4,68,AMBER)
-	_text("DIVE CONTROL   /   02",x+13,y+5,246,21,MONO,14,PALE)
-	destination_text = _text("",x+13,y+25,246,36,HEAD,26,PAPER)
-	depth_text = _text("",size.x*0.5-100,y,200,25,MONO,17,PAPER,HORIZONTAL_ALIGNMENT_CENTER)
-	_button("II","pause",size.x-right_edge-64,y,64,60,false,25)
-	radio_text = _text("",x,y+78,minf(580,size.x*0.62),64,BODY,20,PAPER,HORIZONTAL_ALIGNMENT_LEFT,true)
-	radio_text.add_theme_constant_override("outline_size",5)
-	radio_text.add_theme_color_override("font_outline_color",Color("#10272b"))
-	radio_text.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	context_button = _button("BEARING","context",size.x-right_edge-175,size.y-bottom_edge-65,175,65)
+	var p := _sheet()
+	_heading(p,"BELL 2    /    HARDLINE","Holding station")
+	for i in 3:
+		var words := ["Continue the dive","Follow the line to the bell","Close the book"][i] as String
+		var action := ["continue","recover","title"][i] as String
+		_button(words+"  →",action,p+Vector2(1,150+i*75),Vector2(446,66),HAND,29,BIRO)
+		_rule(p+Vector2(1,216+i*75),446)
+	var note := "The line is tended. Your watch is saved."
 	if not touch:
-		_text("WASD  Swim     Mouse  Look     Q / Space  Trim",x,size.y-bottom_edge-44,600,42,MONO,15,PALE)
-	else:
-		_text("SWIM",x+10,size.y-bottom_edge-24,106,24,MONO,15,PALE,HORIZONTAL_ALIGNMENT_CENTER)
+		note = "WASD swim · mouse look · Q / Space trim\nE use or call · F lamp · Esc pause"
+	_text(note,p+Vector2(0,381),Vector2(448,65),TYPE,16,PENCIL,true)
 
-func update_helm(depth: float, target: String, distance: float, relative_bearing: float, action: String, msg: String, near: bool) -> void:
-	if not is_instance_valid(context_button):
+func _underwater() -> void:
+	if touch:
+		if mode=="dive":
+			_button("","pause",Vector2(size.x-right_edge-51,top_edge),Vector2(54,54),TYPE,16,CHALK,false)
+			context_button = _button("Call bell","context",Vector2(size.x-right_edge-138,size.y-bottom_edge-62),Vector2(138,62),HAND,25,CHALK,false)
+			context_button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		else:
+			_button("Let go","unbrace",Vector2(size.x-right_edge-104,top_edge),Vector2(105,57),HAND,25,CHALK,false)
+		_button("","lamp",Vector2(_lamp_x()-27,top_edge),Vector2(56,54),TYPE,16,CHALK,false)
+	elif mode=="dive":
+		context_button = _button("","context",Vector2(size.x-right_edge-166,size.y-bottom_edge-60),Vector2(166,60),TYPE,18,CHALK,false)
+		context_button.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	var width := minf(size.x*0.61,680)
+	radio_text = _text("",Vector2((size.x-width)*0.5,size.y-bottom_edge-79),Vector2(width,75),TYPE,18,Color("#e0dcca"),true)
+	radio_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	radio_text.add_theme_constant_override("outline_size",3)
+	radio_text.add_theme_color_override("font_outline_color",Color("#141712"))
+
+func set_lamp(enabled: bool) -> void:
+	if lamp_on != enabled:
+		lamp_on = enabled
+		queue_redraw()
+
+func update_work(hint: String) -> void:
+	if mode=="tool" and is_instance_valid(radio_text):
+		radio_text.text = hint
+
+func update_helm(_depth: float, _target: String, _distance: float, _relative_bearing: float, action: String, msg: String, near: bool) -> void:
+	if mode!="dive" or not is_instance_valid(context_button):
 		return
-	destination_text.text = "%s    /    %d m" % [target,roundi(distance)]
-	depth_text.text = "DEPTH  %.1f m" % depth
+	var verb := action.capitalize()
+	if action=="BEARING":
+		verb = "Call bell"
+	elif action=="FILE SHEET":
+		verb = "Hand over"
+	context_button.text = verb if touch else ("[E] "+verb if near else "")
 	radio_text.text = msg
-	context_button.text = action if touch else "[E]  " + action
-	bearing = relative_bearing
 	in_reach = near
 	queue_redraw()
 
+func _lamp_x() -> float:
+	return size.x-right_edge-(87 if mode=="dive" else 140)
+
 func _draw() -> void:
-	if mode != "dive":
+	if mode not in ["tool","dive"]:
 		return
-	var middle := size * 0.5
-	var c := AMBER if in_reach else Color("#d7e6d497")
-	draw_arc(middle,6,0,TAU,24,c,1.25,true)
-	draw_circle(middle,1.3,c)
-	var center := Vector2(size.x*0.5,top_edge+40)
-	for i in range(-5,6):
-		var tick := center+Vector2(i*12,0)
-		draw_line(tick,tick+Vector2(0,7 if i%5==0 else 3),PALE,1)
-	var pointer := center+Vector2(clampf(bearing/PI,-1,1)*60,-2)
-	draw_colored_polygon(PackedVector2Array([pointer,pointer+Vector2(-4,-6),pointer+Vector2(4,-6)]),AMBER)
-	if touch:
-		var origin := joystick_origin if joystick_origin != Vector2.ZERO else Vector2(edge+63,size.y-bottom_edge-78)
-		draw_circle(origin,48,Color("#18343a55"))
-		draw_arc(origin,48,0,TAU,64,Color("#abc1b687"),2,true)
-		draw_circle(origin+joystick*32,19,Color("#c1d2bc77"))
+	if mode=="dive" and in_reach:
+		var center := size*0.5
+		draw_circle(center,1.6,Color(CHALK,0.65))
+	if not touch:
+		return
+	var controls := Color(CHALK,0.74)
+	if mode=="dive":
+		var pause_at := Vector2(size.x-right_edge-23,top_edge+26)
+		draw_line(pause_at+Vector2(-3,-6),pause_at+Vector2(-3,6),controls,2,true)
+		draw_line(pause_at+Vector2(3,-6),pause_at+Vector2(3,6),controls,2,true)
+	var bulb := Vector2(_lamp_x(),top_edge+26)
+	draw_polyline(PackedVector2Array([bulb+Vector2(-10,-3),bulb+Vector2(-3,-3),bulb+Vector2(3,-6),bulb+Vector2(3,6),bulb+Vector2(-3,3),bulb+Vector2(-10,3),bulb+Vector2(-10,-3)]),controls,1.5,true)
+	var beam := controls if lamp_on else Color(CHALK,0.22)
+	for i in range(-1,2):
+		draw_line(bulb+Vector2(6,3*i),bulb+Vector2(13,6*i),beam,1.4,true)
+	if mode=="dive" and joystick_origin!=Vector2.ZERO:
+		draw_arc(joystick_origin,40,0,TAU,36,Color(CHALK,0.22),1.4,true)
+		draw_circle(joystick_origin+joystick*28,11,Color(CHALK,0.29))

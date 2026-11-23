@@ -4,10 +4,11 @@ const BELL := Vector3(0, 0, 8)
 const A2 := Vector3(-4, 0, -4)
 const B4 := Vector3(7, -2, -8)
 
-const FRONT_LEFT := Vector3(-8.8, 0, -6.9)
-const FRONT_RIGHT := Vector3(11.1, 0, -11.1)
-const BACK_LEFT := Vector3(-12.6, 0, -25.4)
-const BACK_RIGHT := Vector3(8, 0, -30.5)
+# A2 sits on the outward face of the western sleeve. A working diver sees one bay.
+const FRONT_LEFT := Vector3(-4.0, 0.0, -8.92)
+const LONG_EDGE := Vector3(57.9, 0.0, -14.0)
+const SHORT_EDGE := Vector3(-12.0, 0.0, -52.8)
+const LEG_RADIUS := 2.97
 const UP := Vector3.UP
 const FRONT := Vector3.BACK
 const CABLE_ORIGIN := Vector3(-2.62, -1.02, 7.5)
@@ -17,6 +18,7 @@ var _materials: Dictionary = {}
 var _shapes: Dictionary = {}
 var _groups: Dictionary = {}
 var _station_leds: Array[MeshInstance3D] = []
+var _lamp_volume: MultiMeshInstance3D
 var _hose: MultiMesh
 var _collision := StaticBody3D.new()
 var _last_diver := Vector3(999, 999, 999)
@@ -34,6 +36,7 @@ func _ready() -> void:
 	_bell()
 	_emit_batches()
 	_hose_setup()
+	_lamp_haze()
 	_suspended_particles()
 	update_diver(BELL)
 
@@ -42,6 +45,14 @@ func _material(key: String, color: String, metal := 0.0, glow := 0.0, texture_pa
 	material.albedo_color = Color(color)
 	material.roughness = 0.86
 	material.metallic = metal
+	if texture_path == "res://art/jacket.webp" and key in ["jacket","shadowsteel","pipe"]:
+		var skin := ShaderMaterial.new()
+		skin.shader = preload("res://world/worn_steel.gdshader")
+		skin.set_shader_parameter("coating",Color(color))
+		skin.set_shader_parameter("steel_albedo",preload("res://art/jacket.webp"))
+		skin.set_shader_parameter("corrosion",preload("res://world/corrosion.tres"))
+		_materials[key] = skin
+		return
 	if texture_path != "" and ResourceLoader.exists(texture_path):
 		material.albedo_texture = load(texture_path)
 		material.uv1_triplanar = true
@@ -67,6 +78,7 @@ func _materials_setup() -> void:
 	_material("brass", "bb8554", 0.14)
 	_material("chalk", "d1c8aa", 0.06)
 	_material("yellow", "efbb6c", 0.05, 0.0, enamel)
+	_material("tag_enamel", "b8b69e", 0.05, 0.0, enamel)
 	_material("hull", "efad55", 0.09, 0.0, enamel)
 	_material("maroon", "94634d", 0.08)
 	_material("navy", "2b494b", 0.10)
@@ -76,45 +88,89 @@ func _materials_setup() -> void:
 	_material("cold_bulb", "b5dfcf", 0.0, 1.5)
 	_material("filed_bulb", "a8f3b5", 0.0, 1.6)
 	_material("rope", "b09862")
-	_material("growth", "798172")
+	_material("growth", "8d8a71")
+	_material("oxides", "976a4e")
+	_material("sponge", "978c77")
+	_material("shells", "a3a298")
+	var pad := ShaderMaterial.new()
+	pad.shader = preload("res://world/ground_patch.gdshader")
+	pad.set_shader_parameter("steel",preload("res://art/jacket.webp"))
+	pad.set_shader_parameter("tarnish",preload("res://world/corrosion.tres"))
+	_materials["scrubbed"] = pad
+	_service_finish("flange", "554a3c", 0.52)
+	_service_finish("stud", "827357", 0.57)
+	_service_finish("washer", "44463f", 0.46)
+	_service_finish("handhold", "757a71", 0.4)
+	_service_finish("carrier_enamel", "9c8956", 0.37)
+	_material("guide_lip", "a28868", 0.04, 0.0, steel)
+	_materials["guide_lip"].cull_mode = BaseMaterial3D.CULL_DISABLED
 	_material("cast", "d8ccc6", 0.16, 0.0, steel)
 
+func _service_finish(key: String, pigment: String, metal: float) -> void:
+	var skin := ShaderMaterial.new()
+	skin.shader = preload("res://game/tool_finish.gdshader")
+	skin.set_shader_parameter("pigment",Color(pigment))
+	skin.set_shader_parameter("wear",preload("res://art/jacket.webp"))
+	skin.set_shader_parameter("metal",metal)
+	_materials[key] = skin
+
 func _environment() -> void:
-	var world_env := WorldEnvironment.new()
+	var volume := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	var water := Sky.new()
-	var backdrop := ShaderMaterial.new()
-	backdrop.shader = preload("res://world/water.gdshader")
-	water.sky_material = backdrop
-	env.sky = water
-	env.background_color = Color("132d30")
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color("030809")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("acc3b6")
-	env.ambient_light_energy = 0.57
+	env.ambient_light_color = Color("294247")
+	env.ambient_light_energy = 0.055
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_DEPTH
-	env.fog_depth_begin = 1.0
-	env.fog_depth_end = 44.0
-	env.fog_depth_curve = 1.05
-	env.fog_light_color = Color("173436")
-	env.fog_light_energy = 0.94
-	env.fog_sky_affect = 0.79
-	world_env.environment = env
-	add_child(world_env)
-	var key := DirectionalLight3D.new()
-	key.light_color = Color("acc7b5")
-	key.light_energy = 1.06
-	key.rotation_degrees = Vector3(-38, -33, 12)
-	add_child(key)
+	env.fog_depth_begin = 0.4
+	env.fog_depth_end = 35.0
+	env.fog_depth_curve = 0.94
+	env.fog_light_color = Color("050a0c")
+	env.fog_light_energy = 0.85
+	volume.environment = env
+	add_child(volume)
 
-func _shape(kind: String) -> PrimitiveMesh:
+# A low barnacle skirt with a recessed crown. Clusters have gaps and broken edges.
+func _shell_mesh() -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var outside: Array[Vector3] = []
+	var rim: Array[Vector3] = []
+	var inside: Array[Vector3] = []
+	for i in 7:
+		var theta := TAU * float(i)/7.0
+		var ring := Vector3(cos(theta),0,sin(theta))
+		outside.append(ring*(0.48 + 0.065*sin(i*2.1)) - UP*0.07)
+		rim.append(ring*(0.20+0.035*cos(i*1.7)) + Vector3(0.055,0.49+0.13*cos(i*2.0),0.023))
+		inside.append(ring*0.12 + Vector3(0.05,0.17,0.02))
+	for i in 7:
+		var j := (i+1)%7
+		for v in [outside[i],rim[j],rim[i], outside[i],outside[j],rim[j],rim[i],inside[j],inside[i],rim[i],rim[j],inside[j]]:
+			surface.add_vertex(v)
+	surface.generate_normals()
+	return surface.commit()
+
+func _shape(kind: String) -> Mesh:
 	if _shapes.has(kind):
 		return _shapes[kind]
-	var result: PrimitiveMesh
+	var result: Mesh
 	if kind == "box":
 		result = BoxMesh.new()
+	elif kind == "crust":
+		result = _shell_mesh()
+	elif kind == "guide":
+		var funnel := CylinderMesh.new()
+		funnel.top_radius = 1.0
+		funnel.bottom_radius = 0.78
+		funnel.height = 1.0
+		funnel.cap_top = false
+		funnel.cap_bottom = false
+		funnel.radial_segments = 18
+		funnel.rings = 0
+		result = funnel
 	elif kind == "dome":
 		var dome := SphereMesh.new()
 		dome.radial_segments = 16
@@ -188,67 +244,119 @@ func _emit_batches() -> void:
 		draw.name = "%s_%s" % [parts[1], parts[0]]
 		draw.multimesh = batch
 		draw.material_override = _materials[parts[1]]
-		draw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if parts[1] in ["jacket", "shadowsteel", "pipe", "hull"]:
+			draw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		else:
+			draw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(draw)
 	_groups.clear()
 
+# A battered, eight-legged jacket. Levels separate by an entire 23 m bay.
+func _leg_at(column: int, row: int, h: float) -> Vector3:
+	var p := FRONT_LEFT + float(column) / 3.0 * LONG_EDGE + float(row) * SHORT_EDGE
+	var centre := FRONT_LEFT + 0.5 * (LONG_EDGE + SHORT_EDGE)
+	return p + (centre - p).normalized() * (0.062 * h) + UP * h
+
 func _jacket() -> void:
-	var feet := [FRONT_LEFT, FRONT_RIGHT, BACK_RIGHT, BACK_LEFT]
-	# Front legs open slightly toward the seabed. Ring welds divide the cans.
-	for i in feet.size():
-		var foot: Vector3 = feet[i]
-		var slope := Vector3(0.027 if i == 0 or i == 3 else -0.027, 1.0, -0.015 if i < 2 else 0.015)
-		_tube(foot - 65.0 * slope, foot + 65.0 * slope, 1.08, "jacket", 16, true)
-		for j in range(-6, 7):
-			var site := foot + slope * (j * 7.2 + 2.7)
-			_band(site, slope, 0.15, 1.108, "edge", 16)
-			_band(site + slope * 0.10, slope, 0.048, 1.115, "pipe", 16)
-		for level in [-17.0, -6.8, 6.7, 20.2]:
-			_band(foot + slope * level, slope, 0.91, 1.18, "shadowsteel", 16)
-	for level in range(-3, 4):
-		var bottom := -6.8 + 13.5 * level
-		for j in 4:
-			var p: Vector3 = feet[j]
-			var q: Vector3 = feet[(j + 1) % 4]
-			var a := p + UP * bottom
-			var b := q + UP * bottom
-			_tube(a, b, 0.56 if j == 0 else 0.50, "jacket", 12, true)
-			var c := p.lerp(q, 0.5) + UP * (bottom + 13.5)
-			# Paired K braces leave generous open bays at the working level.
-			var material := "jacket" if j == 0 else "shadowsteel"
-			_tube(a + UP * 0.18, c, 0.48, material, 12, true)
-			_tube(b + UP * 0.18, c, 0.48, material, 12, true)
-			if j == 0:
-				for member in [a, b]:
-					var v: Vector3 = c - member
-					for u in [0.20, 0.66]:
-						_band(member.lerp(c, u), v, 0.085, 0.505, "edge")
-	# An internal tower and hanging tool lines give the near face some parallax.
-	for x in [-5.2, -2.3, 1.5, 4.0]:
-		var z: float = -21.0 - x * 0.08
-		_tube(Vector3(x, -54, z), Vector3(x, 54, z), 0.18 if x > 0 else 0.30, "pipe")
-		for i in range(-3, 4):
-			_band(Vector3(x, i * 8.0, z), UP, 0.18, 0.36, "edge")
-	for offset in [-0.36, 0.36]:
-		_tube(Vector3(-8.0 + offset, -27, -5.75), Vector3(-8.0 + offset, 25, -5.75), 0.045, "iron", 8)
-	for i in range(-52, 50):
-		var y := i * 0.50
-		_tube(Vector3(-8.38, y, -5.74), Vector3(-7.62, y, -5.74), 0.040, "galvanized", 8)
-	for i in range(-6, 7):
-		_box(Vector3(-8.0, i * 4.0, -5.94), Vector3(1.08, 0.13, 0.40), "edge")
-	# Tie-off lines run between stations; the red and cream lashing indicates the bell side.
-	var ends := [Vector3(-8.15, -3.8, -5.72), Vector3(-4, -2.7, -5.7), Vector3(1,-3.48,-7.1), Vector3(7,-4.4,-9.7),Vector3(10.5,-4.7,-10.2)]
-	for i in ends.size() - 1:
+	for row in 2:
+		for column in 4:
+			var axis := (_leg_at(column, row, 1.0) - _leg_at(column, row, 0.0)).normalized()
+			var radius := LEG_RADIUS if column in [0, 3] else 2.06
+			_tube(_leg_at(column, row, -92), _leg_at(column, row, 94), radius, "jacket", 28, true)
+			for j in range(-9, 10):
+				var p := _leg_at(column, row, j * 9.13 + 2.9)
+				_band(p, axis, 0.095, radius + 0.045, "edge", 28)
+			for level in range(-3, 4):
+				var h := -6.4 + 23.0 * level
+				var foot := _leg_at(column, row, h)
+				_band(foot, axis, 2.32, radius + 0.105, "shadowsteel", 28)
+				if column < 3:
+					var next := _leg_at(column + 1, row, h)
+					_tube(foot, next, 1.12, "jacket", 18, true)
+					var high := _leg_at(column + 1, row, h + 23.0)
+					_tube(foot, high, 0.83, "jacket", 16, true)
+					_tube(next, _leg_at(column, row, h + 23.0), 0.83, "shadowsteel", 16, true)
+				if row==0 and column in [0,3]:
+					var back := _leg_at(column, 1, h)
+					_tube(foot, back, 1.04, "jacket", 16, true)
+					_tube(foot, _leg_at(column, 1, h + 23.0), 0.93, "shadowsteel", 16, true)
+					_tube(back, _leg_at(column, 0, h + 23.0), 0.93, "shadowsteel", 16, true)
+
+	# Conductors run as a bundle into the dark interior.
+	for column in 6:
+		for row in 2:
+			var p := Vector3(-1.8 + column * 2.25, 0, -24.0 - row * 2.1 - column * 0.45)
+			_tube(p - UP * 75, p + UP * 75, 0.41, "pipe", 12)
+			for level in [-31,-9,13,35]:
+				_band(p + UP*level, UP, 0.27, 0.48, "edge", 12)
+	# A small service ladder gives the near sleeve a human measure.
+	var tangent := Vector3(0.83,0.0,0.56).normalized()
+	var outward := Vector3(-0.56,0.0,0.83).normalized()
+	var face := _leg_at(0,0,0) + outward * (LEG_RADIUS + 0.32)
+	var slope := _leg_at(0,0,1) - _leg_at(0,0,0)
+	for side in [-0.27,0.27]:
+		_tube(face + tangent*side - slope*20, face + tangent*side + slope*16, 0.036,"iron",8)
+	for i in range(-56,46):
+		var rung := face + slope * i * 0.35
+		_tube(rung-tangent*0.27, rung+tangent*0.27, 0.024,"galvanized",8)
+		if i % 8 == 0:
+			for side in [-0.27,0.27]:
+				var end: Vector3 = rung + tangent*side
+				_tube(end-outward*0.47,end,0.04,"iron",8)
+	var low := _leg_at(0,0,-6.4)
+	var high := _leg_at(1,0,16.6)
+	_growth(_leg_at(0,0,-17), _leg_at(0,0,19), LEG_RADIUS, 2238, 70)
+	_growth(low, high, 0.83, 740, 36)
+	_growth(low, _leg_at(1,0,-6.4), 1.12, 391, 40)
+	_growth(_leg_at(1,0,-6.4), _leg_at(0,0,16.6), 0.83, 736, 32)
+	_piling_guide(Vector3(2.0,-5.3,-9.1))
+
+	# A thin tended guide runs from one workface to the next.
+	var ends := [Vector3(-5.0, -2.8, -5.78), Vector3(-4,-2.8,-5.72), Vector3(0,-3.48,-7.1),Vector3(7,-4.4,-9.7)]
+	for i in ends.size()-1:
 		var a: Vector3 = ends[i]
-		var b: Vector3 = ends[i + 1]
-		var low := a.lerp(b, 0.50) + Vector3.DOWN * 0.19
-		_tube(a, low, 0.040, "rope", 8)
-		_tube(low, b, 0.040, "rope", 8)
-		for k in 3:
-			_band(a.lerp(low, 0.42 + k * 0.055), low-a, 0.060, 0.052, "maroon" if k % 2 == 0 else "chalk", 8)
+		var b: Vector3 = ends[i+1]
+		var sag := a.lerp(b,0.5)+Vector3.DOWN*0.24
+		_tube(a, sag, 0.028,"rope",8)
+		_tube(sag, b, 0.028,"rope",8)
+		_band(a.lerp(sag,0.38), sag-a, 0.09, 0.034,"chalk",8)
+
+# The lip is built as an open flared sleeve. Its dark aperture remains visible from above.
+func _piling_guide(at: Vector3) -> void:
+	_place("guide", "guide_lip", Transform3D(Basis.from_scale(Vector3(1.37,1.4,1.37)),at))
+	for height in [-0.68,0.69]:
+		var radius := 1.37 if height > 0 else 1.07
+		for i in 18:
+			var a := TAU*i/18.0
+			var b := TAU*(i+1)/18.0
+			var p := at + Vector3(cos(a)*radius, height, sin(a)*radius)
+			var q := at + Vector3(cos(b)*radius, height, sin(b)*radius)
+			_tube(p, q, 0.065,"oxides",6)
+	for i in [-1.0,1.0]:
+		var toe := at+Vector3(i*0.84,-0.48,-0.50)
+		_tube(toe, toe+Vector3(i*0.59,-1.03,-1.25),0.18,"shadowsteel",10)
+
+# Patches follow actual cylinder normals so the ragged edges break the silhouette.
+func _growth(a: Vector3,b: Vector3,radius: float,seed_value: int,patches: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var frame := _axis_basis(b-a)
+	var tints := ["growth","oxides","growth","sponge","shells","growth"]
+	for patch in patches:
+		var t := rng.randf_range(0.025,0.975)
+		var angle := rng.randf()*TAU
+		var tone: String = tints[rng.randi_range(0,tints.size()-1)]
+		for k in rng.randi_range(7,15):
+			var theta := angle + rng.randfn(0.0,0.26)/radius
+			var normal := frame.x*cos(theta) + frame.z*sin(theta)
+			var p := a.lerp(b,t) + normal*(radius+0.018) + frame.y*rng.randfn(0.0,0.34)
+			var scale_size := rng.randf_range(0.07,0.26)
+			var basis := _axis_basis(normal) * Basis(UP,rng.randf()*TAU)
+			var size := Vector3(scale_size*1.33, scale_size*rng.randf_range(0.47,1.28), scale_size)
+			_place("crust", tone, Transform3D(basis.scaled_local(size),p))
 
 func _risers() -> void:
-	for spec in [[-4.0,-6.70,0.69],[-5.65,-7.24,0.38],[6.95,-10.62,0.71],[8.55,-11.10,0.31]]:
+	for spec in [[-7.57,-7.65,0.40],[6.95,-10.62,0.71],[8.55,-11.10,0.31]]:
 		var x: float = spec[0]
 		var z: float = spec[1]
 		var r: float = spec[2]
@@ -284,13 +392,13 @@ func _service_gear() -> void:
 	_box(center+Vector3(-0.19,0.39,0),Vector3(0.87,0.08,0.50),"iron")
 	# Sacrificial anodes sit proud of the front braces on short brackets.
 	for i in range(4):
-		var base := Vector3(-7.08+i*4.53,-6.81,-6.56-i*1.01)
+		var base := _leg_at(0,0,-6.4).lerp(_leg_at(1,0,-6.4),0.19+i*0.18) + FRONT*0.82
 		for x in [-0.44,0.44]:
 			_box(base+Vector3(x,0,0.22),Vector3(0.10,0.14,0.35),"edge")
 		_box(base+FRONT*0.44,Vector3(1.25,0.16,0.19),"growth")
 	# A low cable tray takes bundled services round the near leg and away to the rear.
-	var near := Vector3(-8.32,-3.15,-5.65)
-	var far := Vector3(-12.10,-3.55,-24.65)
+	var near := Vector3(-6.85,-3.15,-8.75)
+	var far := Vector3(-11.66,-3.55,-28.65)
 	for i in 3:
 		var lift := UP * (i*0.17)
 		_tube(near+lift,far+lift,0.052,"iron",8)
@@ -300,7 +408,11 @@ func _service_gear() -> void:
 
 func _plate(center: Vector3, text: String, width: float, height: float) -> void:
 	_box(center, Vector3(width,height,0.075), "iron")
-	_box(center + FRONT * 0.045, Vector3(width-0.045,height-0.045,0.025), "yellow")
+	_box(center + FRONT * 0.045, Vector3(width-0.045,height-0.045,0.025), "tag_enamel")
+	# Small chips expose the backing around the lower edge and the bolt holes.
+	for i in 6:
+		var chip := center + Vector3(width*(0.12*i-0.42), -height*(0.38+0.035*sin(i*4.7)), 0.062)
+		_box(chip,Vector3(0.045+0.014*cos(i*1.26),0.016,0.009),"oxides")
 	_label(center + FRONT * 0.065, text, height * 0.76, Color("292f29"))
 	for x in [-1.0, 1.0]:
 		for y in [-1.0, 1.0]:
@@ -326,26 +438,32 @@ func _studs(center: Vector3, radius: float, count: int, stud: float, mat: String
 	for i in count:
 		var angle := TAU * float(i) / count
 		var p := center + Vector3(cos(angle),sin(angle),0.0) * radius
+		_band(p - FRONT*stud*0.4, FRONT, stud*0.68, stud*1.42, "washer", 12)
 		_band(p, FRONT, stud, stud, mat, 6)
 
 func _rail(a: Vector3, b: Vector3, z: float, radius := 0.04) -> void:
 	var aa := a + FRONT * z
 	var bb := b + FRONT * z
-	_tube(a, aa, radius, "galvanized", 8)
-	_tube(aa, bb, radius, "galvanized", 8)
-	_tube(bb, b, radius, "galvanized", 8)
+	_tube(a, aa, radius, "handhold", 8)
+	_tube(aa, bb, radius, "handhold", 8)
+	_tube(bb, b, radius, "handhold", 8)
 
 func _station_a() -> void:
 	var hub := Vector3(-4,0,-5.99)
 	# The wall probe lands on an exposed inspection pad in a ring of original coating.
-	_band(hub, FRONT, 0.31, 0.64, "edge", 16)
-	_band(hub + FRONT*0.18, FRONT, 0.10, 0.55, "cast", 16)
-	_band(hub + FRONT*0.25, FRONT, 0.07, 0.43, "maroon", 16)
-	_band(hub + FRONT*0.30, FRONT, 0.045, 0.315, "iron", 16)
-	_band(hub + FRONT*0.33, FRONT, 0.034, 0.25, "edge", 16)
-	_band(hub + FRONT*0.355, FRONT, 0.014, 0.21, "cast", 16)
-	_label(hub + FRONT * 0.369, "+", 0.14, Color("a5a48a"))
-	_studs(hub + FRONT*0.246, 0.493, 10, 0.047, "brass")
+	_band(hub, FRONT, 0.31, 0.64, "flange", 24)
+	_band(hub + FRONT*0.18, FRONT, 0.10, 0.55, "cast", 24)
+	_band(hub + FRONT*0.25, FRONT, 0.07, 0.43, "flange", 24)
+	_band(hub + FRONT*0.30, FRONT, 0.045, 0.315, "washer", 24)
+	_band(hub + FRONT*0.33, FRONT, 0.034, 0.25, "washer", 24)
+	_band(hub + FRONT*0.355, FRONT, 0.014, 0.21, "scrubbed", 28)
+	# Faint punch marks on the outer face identify the surveyed arc.
+	for k in 3:
+		var angle := -2.2 + k*0.085
+		var radial := Vector3(cos(angle),sin(angle),0)
+		var nick := hub + FRONT*0.288 + radial*0.399
+		_tube(nick-radial*0.018,nick+radial*0.018,0.0035,"handhold",5)
+	_studs(hub + FRONT*0.246, 0.493, 10, 0.047, "stud")
 	_band(hub + UP*1.09 - FRONT*0.59, UP, 0.23, 0.73, "edge", 16)
 	_plate(hub + Vector3(0,1.15,0.12), "A2", 1.16, 0.54)
 	_rail(hub + Vector3(-0.66,-0.53,-0.09), hub + Vector3(-0.66,0.55,-0.09), 0.32)
@@ -365,14 +483,12 @@ func _station_b() -> void:
 	var hub := Vector3(7,-2,-9.95)
 	for dy in [-0.40,0.40]:
 		_band(hub + Vector3(0,dy,-0.66), UP, 0.22, 0.82, "edge", 16)
-		_box(hub + Vector3(0,dy,0.10), Vector3(1.80,0.20,0.35),"yellow", true)
+		_box(hub + Vector3(0,dy,0.10), Vector3(1.80,0.20,0.35),"carrier_enamel", true)
 		for side in [-1.0,1.0]:
 			var foot := hub + Vector3(side*0.71,dy,0.30)
-			_band(foot, FRONT, 0.14, 0.102,"galvanized",6)
+			_band(foot, FRONT, 0.14, 0.102,"stud",6)
 	_box(hub + Vector3(0,0,-0.025), Vector3(1.03,0.92,0.15), "navy")
-	_box(hub + Vector3(0,0,0.26), Vector3(1.19,0.25,0.17), "brass")
 	for side in [-1.0,1.0]:
-		_box(hub + Vector3(side*0.48,0,0.37), Vector3(0.08,0.27,0.025), "chalk")
 		_box(hub + Vector3(side*0.65,0.06,0.19), Vector3(0.13,1.23,0.12), "iron")
 	_rail(hub + Vector3(-0.98,-0.40,0.01), hub + Vector3(-0.98,0.40,0.01), 0.29)
 	_box(hub + Vector3(0,1.06,0.20),Vector3(0.42,0.18,0.72),"edge")
@@ -406,11 +522,11 @@ func _work_light(at: Vector3, warm: bool) -> void:
 	var light := OmniLight3D.new()
 	light.position = at + Vector3(0,0,0.65)
 	light.light_color = Color("ffcb8d") if warm else Color("cee7ce")
-	light.light_energy = 2.2
-	light.omni_range = 4.9
+	light.light_energy = 0.56
+	light.omni_range = 2.3
 	light.omni_attenuation = 1.2
 	add_child(light)
-	_scatter(at + FRONT*0.24, 2.15, warm)
+	_scatter(at + FRONT*0.24, 1.3, warm)
 
 func _scatter(at: Vector3, radius: float, warm: bool) -> void:
 	var skin := ShaderMaterial.new()
@@ -527,29 +643,62 @@ func update_diver(pos: Vector3) -> void:
 		_hose.set_instance_transform(i,Transform3D(frame,(sample+last)*0.5))
 		last = sample
 
+# Four depth-tested, feathered cross sections integrate a little light scattered by the
+# water before it reaches the eye. Nearby opaque steel occludes the farther sections.
+func _lamp_haze() -> void:
+	var mesh := QuadMesh.new()
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://world/lamp_haze.gdshader")
+	mesh.material = material
+	var sections := PackedFloat32Array([1.8,3.9,7.3,13.1])
+	var layer := MultiMesh.new()
+	layer.transform_format = MultiMesh.TRANSFORM_3D
+	layer.mesh = mesh
+	layer.instance_count = sections.size()
+	for i in sections.size():
+		var d := sections[i]
+		var diameter := 1.06*d
+		layer.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3(diameter,diameter,1.0)),Vector3.FORWARD*d))
+	_lamp_volume = MultiMeshInstance3D.new()
+	_lamp_volume.name = "IlluminatedWater"
+	_lamp_volume.multimesh = layer
+	_lamp_volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_lamp_volume.visible = false
+	add_child(_lamp_volume)
+
+func update_lamp(pose: Transform3D, enabled: bool) -> void:
+	if _lamp_volume != null:
+		_lamp_volume.global_transform = pose
+		_lamp_volume.visible = enabled
+
 func _suspended_particles() -> void:
-	var particles := CPUParticles3D.new()
-	particles.name = "SuspendedMatter"
-	particles.amount = 175
-	particles.lifetime = 19.0
-	particles.preprocess = 19.0
-	particles.position = Vector3(1,5,-5)
-	particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	particles.emission_box_extents = Vector3(14,8,14)
-	particles.direction = Vector3(0.47,-0.50,0.15)
-	particles.spread = 20.0
-	particles.gravity = Vector3.ZERO
-	particles.initial_velocity_min = 0.15
-	particles.initial_velocity_max = 0.34
-	particles.scale_amount_min = 0.38
-	particles.scale_amount_max = 1.36
-	var flake := QuadMesh.new()
-	flake.size = Vector2(0.028,0.024)
-	var skin := StandardMaterial3D.new()
-	skin.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	skin.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	skin.albedo_color = Color("6e8a80")
-	skin.cull_mode = BaseMaterial3D.CULL_DISABLED
-	flake.material = skin
-	particles.mesh = flake
-	add_child(particles)
+	_particle_layer("Silt", 1880, 7.7, 0.018, false, 582)
+	_particle_layer("LooseFlakes", 860, 9.7, 0.034, false, 733)
+	_particle_layer("DriftingStrands", 260, 8.3, 0.026, true, 912)
+
+func _particle_layer(id: String, count: int, half_extent: float, size_m: float, strand: bool, seed_value: int) -> void:
+	var grain := QuadMesh.new()
+	var skin := ShaderMaterial.new()
+	skin.shader = preload("res://world/marine_snow.gdshader")
+	skin.set_shader_parameter("half_extent", half_extent)
+	skin.set_shader_parameter("fleck_size",size_m)
+	skin.set_shader_parameter("thread",1.0 if strand else 0.0)
+	grain.material = skin
+	var swarm := MultiMesh.new()
+	swarm.transform_format = MultiMesh.TRANSFORM_3D
+	swarm.use_custom_data = true
+	swarm.mesh = grain
+	swarm.instance_count = count
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	for i in count:
+		var seed_point := Vector3(rng.randf(),rng.randf(),rng.randf()) * half_extent*2.0
+		swarm.set_instance_transform(i,Transform3D(Basis.IDENTITY,seed_point))
+		swarm.set_instance_custom_data(i,Color(rng.randf(),rng.randf(),rng.randf(),rng.randf()))
+	# The GPU follows the diver; this box keeps lamp selection and culling valid over the full excursion.
+	swarm.custom_aabb = AABB(Vector3(-67,-36,-64),Vector3(136,80,140))
+	var draw := MultiMeshInstance3D.new()
+	draw.name = id
+	draw.multimesh = swarm
+	draw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(draw)
