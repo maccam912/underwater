@@ -8,6 +8,12 @@ var elapsed := 0.0
 var offsets: Array[Vector3] = []
 var lengths: Array[float] = []
 var sidesteps: Array[Vector3] = []
+# After a disturbance the shoal bolts out of the light and stays away a while.
+var flee_dirs: Array[Vector3] = []
+var travel := 0.0
+var rush := 0.0
+var away := 0.0
+var absence := 0.0
 
 func _ready() -> void:
 	name = "JacketFish"
@@ -17,7 +23,7 @@ func _ready() -> void:
 	multimesh.use_colors = true
 	multimesh.use_custom_data = true
 	multimesh.mesh = _pollock()
-	multimesh.custom_aabb = AABB(Vector3(-24,-17,-6),Vector3(52,24,22))
+	multimesh.custom_aabb = AABB(Vector3(-44,-37,-26),Vector3(92,64,62))
 	multimesh.instance_count = FISH_COUNT
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 9162
@@ -25,16 +31,37 @@ func _ready() -> void:
 		offsets.append(Vector3(rng.randf_range(-2.4,2.4),rng.randf_range(-0.7,0.8),rng.randf_range(-0.9,0.9)))
 		lengths.append(rng.randf_range(0.40,0.68) if i < UPPER_COUNT else rng.randf_range(0.62,0.98))
 		sidesteps.append(Vector3.ZERO)
+		flee_dirs.append(Vector3.ZERO)
 		multimesh.set_instance_color(i, Color.WHITE)
 		multimesh.set_instance_custom_data(i,Color(rng.randf(),rng.randf(),0,1))
 	_process(0.0)
 
+## Fish nearest the source bolt first. They return once the water is quiet.
+func startle(origin: Vector3, seconds := 50.0) -> void:
+	for i in FISH_COUNT:
+		var from_source := multimesh.get_instance_transform(i).origin - origin
+		from_source.y = absf(from_source.y) * 0.3 + 0.15
+		flee_dirs[i] = from_source.normalized() if from_source.length() > 0.01 else Vector3.FORWARD
+	rush = 1.0
+	absence = maxf(absence, seconds)
+
+
+## 1 when the shoal is in its usual water, 0 when it has gone.
+func presence() -> float:
+	return 1.0 - away
+
+
 func _process(delta: float) -> void:
 	elapsed += delta
+	rush = move_toward(rush, 0.0, delta / 7.0)
+	absence = maxf(0.0, absence - delta)
+	away = move_toward(away, 1.0 if absence > 0.0 else 0.0, delta * (0.8 if absence > 0.0 else 0.03))
+	travel += delta * (1.0 + 2.4 * rush)
+	var flight := smoothstep(0.0, 1.0, away) * 19.0
 	var camera := get_viewport().get_camera_3d()
 	for i in FISH_COUNT:
 		var upper := i < UPPER_COUNT
-		var angle := elapsed * (0.090 if upper else -0.058) + (-0.22 if upper else 1.22)
+		var angle := travel * (0.090 if upper else -0.058) + (-0.22 if upper else 1.22)
 		var spread := offsets[i]
 		angle += 0.24*sin(elapsed*0.16) + spread.x*0.12
 		var centre := Vector3(0,-0.3,0.1) if upper else Vector3(2,-9,4)
@@ -45,6 +72,9 @@ func _process(delta: float) -> void:
 		var heading := Vector3(cos(angle)*radius_x,cos(angle*2.0)*1.4,-sin(angle)*radius_z).normalized()
 		if not upper:
 			heading = -heading
+		pos += flee_dirs[i] * flight
+		if rush > 0.0 and absence > 0.0:
+			heading = heading.lerp(flee_dirs[i], rush).normalized()
 		var avoid := Vector3.ZERO
 		if camera:
 			var separation := pos - camera.global_position

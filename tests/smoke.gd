@@ -3,6 +3,7 @@ extends SceneTree
 const Dive = preload("res://game/dive.tscn")
 const SurveyRoute = preload("res://tests/survey_route.gd")
 const ClampRoute = preload("res://tests/clamp_route.gd")
+const AtmosphereRoute = preload("res://tests/atmosphere_route.gd")
 var failed := false
 var desktop_route := "--desktop-route" in OS.get_cmdline_user_args()
 var reload_checked := [false, false]
@@ -255,5 +256,13 @@ func _run() -> void:
 	await process_frame
 	DirAccess.remove_absolute(path)
 	if not failed:
-		print("Underwater smoke passed: free swim and look, both hands-on jobs, lamp, cold resume, signed inspections and repeat watch.")
+		var calm = _instance(path)
+		await process_frame
+		await AtmosphereRoute.new().exercise(self, calm)
+		root.remove_child(calm)
+		calm.free()
+		await process_frame
+		DirAccess.remove_absolute(path)
+	if not failed:
+		print("Underwater smoke passed: free swim and look, both hands-on jobs, lamp, cold resume, signed inspections, repeat watch and a full first watch in the dark water.")
 	quit(1 if failed else 0)

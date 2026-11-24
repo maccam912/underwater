@@ -5,12 +5,15 @@ const Helmet = preload("res://ui/helmet.gd")
 const Sound = preload("res://audio/sound.gd")
 const SurveyWork = preload("res://game/survey_work.gd")
 const ClampWork = preload("res://game/clamp_work.gd")
+const Undercurrent = preload("res://game/undercurrent.gd")
 const Visor = preload("res://ui/visor.gdshader")
 const TAGS := ["A2", "B4"]
 const BELL := Jacket.BELL
 const REACH := 2.15
 const BELL_REACH := 3.0
 const EXCURSION := 42.0
+const STAGE := Vector3(-11.5,-1.4,12.2)
+const STAGE_LOOK := Vector3(-4.7,0.35,-5.2)
 
 
 var jacket: Node3D
@@ -56,6 +59,15 @@ var touch := false
 var save_path := "user://watch.cfg"
 var ready_for_save := false
 var check_resume_clearance := false
+var undercurrent = Undercurrent.new()
+var uncanny: Variant = {}
+var visor: ShaderMaterial
+var curtain := ColorRect.new()
+var curtain_fade: Tween
+var callout_faint := false
+var lamp_energy := 3.6
+var spill_energy := 0.83
+var stage_time := 0.0
 
 func _ready() -> void:
 	touch = OS.has_feature("mobile") or "--touch-ui" in OS.get_cmdline_user_args()
@@ -99,11 +111,17 @@ func _ready() -> void:
 	add_child(interface)
 	var grain := ColorRect.new()
 	grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var material := ShaderMaterial.new()
-	material.shader = Visor
-	grain.material = material
+	visor = ShaderMaterial.new()
+	visor.shader = Visor
+	grain.material = visor
 	interface.add_child(grain)
 	grain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Black water outside the bell's wet porch, before the eyes adjust.
+	curtain.color = Color("010304")
+	curtain.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	curtain.modulate.a = 0.0
+	interface.add_child(curtain)
+	curtain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	interface.add_child(hud)
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.command.connect(_command)
@@ -116,6 +134,9 @@ func _ready() -> void:
 		field_tool.hint_changed.connect(_tool_hint)
 		field_tool.station_changed.connect(_station_changed)
 		_prepare_site(i)
+	add_child(undercurrent)
+	undercurrent.setup(self, jacket)
+	undercurrent.restore(uncanny, watch)
 	ready_for_save = true
 	_show("title")
 
@@ -133,15 +154,27 @@ func _set_light(active: bool) -> void:
 func _focus_lamp(work: float) -> void:
 	# Flood at the workface so the diver can read both sides of the fitting.
 	light.spot_angle = lerpf(33.0,48.0,work)
-	light.light_energy = lerpf(3.6,1.25,work)
+	lamp_energy = lerpf(3.6,1.25,work)
 	spill.spot_angle = lerpf(57.0,61.0,work)
-	spill.light_energy = lerpf(0.83,0.86,work)
+	spill_energy = lerpf(0.83,0.86,work)
 	jacket.update_lamp_focus(light.spot_angle, work)
+	_apply_lamp()
+
+func _apply_lamp() -> void:
+	var gain: float = undercurrent.lamp_gain if mode in ["dive","tool"] else 1.0
+	light.light_energy = lamp_energy * gain
+	spill.light_energy = spill_energy * gain
+	jacket.set_lamp_gain(gain)
+
+## The undercurrent changed the lamp, the helmet feed or the diver's balance.
+func atmosphere_changed() -> void:
+	_apply_lamp()
+	visor.set_shader_parameter("disturb", undercurrent.disturb)
 
 func _stage_camera() -> void:
 	jacket.update_diver(Vector3(9,-5,18))
-	camera.position = Vector3(-11.5,-1.4,12.2)
-	camera.look_at(Vector3(-4.7,0.35,-5.2), Vector3.UP)
+	camera.position = STAGE
+	camera.look_at(STAGE_LOOK, Vector3.UP)
 	light.rotation.y = deg_to_rad(-21.0)
 	light.spot_angle = 41.0
 	jacket.update_lamp_focus(light.spot_angle)
@@ -160,6 +193,13 @@ func _show(next: String) -> void:
 	move_finger = -1
 	look_finger = -1
 	diver.velocity = Vector3.ZERO
+	camera.h_offset = 0.0
+	camera.v_offset = 0.0
+	visor.set_shader_parameter("mist", 0.0)
+	visor.set_shader_parameter("disturb", 0.0)
+	if next != "dive" and curtain_fade:
+		curtain_fade.kill()
+		curtain.modulate.a = 0.0
 	if DisplayServer.get_name() != "headless" and not touch:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if next=="dive" else Input.MOUSE_MODE_VISIBLE
 	lamp_focus = 0.0
@@ -184,7 +224,8 @@ func _command(action: String) -> void:
 				diver.position = last_pos
 				check_resume_clearance = true
 				_show("dive")
-				_say("Ellis  /  Still with you. Same sheet.")
+				_lock_out(1.6)
+				_say("Ellis — Still with you. Same sheet.")
 			else:
 				_show("board")
 		"job0","job1": _take_job(0 if action=="job0" else 1)
@@ -196,6 +237,7 @@ func _command(action: String) -> void:
 				for i in 2:
 					_prepare_site(i)
 				brief = "Mara’s relief sheet is in. Same crew today. Ellis has the bell."
+				undercurrent.begin_watch(watch)
 				_save_watch()
 				_show("board")
 		"context": _context()
@@ -232,9 +274,25 @@ func _take_job(index: int) -> void:
 	last_pos = BELL
 	sound.cue("hatch")
 	_show("dive")
-	var controls := "Left thumb swims. Drag the water to look." if touch else "WASD to fin. Mouse to look."
-	_say("Ellis — I have your line. %s %s" % [_bearing(), controls], 10)
+	_lock_out(3.2)
+	_say("Ellis — Diver's out. I have your line.", 4.5)
+	undercurrent.later(4.6, _first_bearing)
 	_save_watch()
+
+func _first_bearing() -> void:
+	var controls := "Left thumb swims. Drag the water to look." if touch else "WASD to fin. Mouse to look."
+	_say("Ellis — %s %s" % [_bearing(), controls], 10)
+
+# The bell's porch light falls away and the eyes adjust to the water.
+func _lock_out(seconds: float) -> void:
+	undercurrent.lock_out()
+	_apply_lamp()
+	if curtain_fade:
+		curtain_fade.kill()
+	curtain.modulate.a = 1.0
+	curtain_fade = create_tween()
+	curtain_fade.tween_interval(seconds * 0.35)
+	curtain_fade.tween_property(curtain, "modulate:a", 0.0, seconds * 0.65).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 
 func _at_bell() -> void:
 	sound.cue("hatch")
@@ -300,8 +358,9 @@ func _context() -> void:
 		return
 	if _heading_home() and diver.position.distance_to(BELL) < BELL_REACH:
 		_at_bell()
-	else:
-		_say("Ellis — " + _bearing())
+		return
+	var reply: String = undercurrent.context_reply()
+	_say(reply if not reply.is_empty() else "Ellis — " + _bearing())
 
 func _leave_work() -> void:
 	if instrument == null:
@@ -357,11 +416,28 @@ func _tool_submitted(success: bool, detail: String) -> void:
 	tools_at_sites[job].set_filed(true)
 	_say("Noor — %s Bring the sheet back to Ellis." % detail, 12.0)
 
-func _say(words: String, seconds := 8.0) -> void:
+func _say(words: String, seconds := 8.0, faint := false) -> void:
 	callout = words
+	callout_faint = faint
 	radio_time = seconds
 	sound.cue("comms")
 	_update_helm()
+
+## The crew on the hardline. A faint line has no speaker and may not be for you.
+func say(words: String, seconds := 8.0, faint := false) -> void:
+	_say(words, seconds, faint)
+
+func current_station() -> String:
+	return tools_at_sites[job].station_name() if job >= 0 else "Bell 2"
+
+func _process(delta: float) -> void:
+	if mode not in ["title","board","log"]:
+		return
+	# The bell hangs on its wires and the watcher drifts a little with the swell.
+	stage_time += delta
+	camera.position = STAGE + Vector3(sin(stage_time*0.23)*0.16, sin(stage_time*0.31)*0.10, cos(stage_time*0.19)*0.12)
+	camera.look_at(STAGE_LOOK + Vector3(sin(stage_time*0.13)*0.22, sin(stage_time*0.17)*0.08, 0.0), Vector3.UP)
+	jacket.update_lamp(light.global_transform, true)
 
 func _physics_process(delta: float) -> void:
 	if mode not in ["dive","tool"]:
@@ -405,6 +481,11 @@ func _physics_process(delta: float) -> void:
 		Vector2(Jacket.A2.x, Jacket.A2.z), Vector2(Jacket.B4.x, Jacket.B4.z))
 	sound.set_distance_to_steel(horizontal.distance_to(near_face))
 	radio_time = maxf(0,radio_time-delta)
+	undercurrent.tick(delta, true, instrument != null)
+	var now := Time.get_ticks_msec() * 0.001
+	camera.h_offset = undercurrent.shake * 0.035 * sin(now * 31.0)
+	camera.v_offset = undercurrent.shake * 0.024 * sin(now * 23.0 + 1.3)
+	visor.set_shader_parameter("mist", sound.exhale() * 0.8)
 	save_tick += delta
 	if save_tick > (1.5 if work_dirty else 2.5):
 		save_tick = 0
@@ -418,8 +499,10 @@ func _update_helm() -> void:
 	if mode not in ["dive","tool"]:
 		return
 	var at_bell := _heading_home() and diver.position.distance_to(BELL) < BELL_REACH
-	var words := callout if radio_time > 0.0 else work_hint
-	hud.update_helm(words, at_bell, not sample.is_empty(), instrument != null)
+	var words := work_hint
+	if radio_time > 0.0:
+		words = undercurrent.garbled(callout) if callout_faint else callout
+	hud.update_helm(words, at_bell, not sample.is_empty(), instrument != null, callout_faint and radio_time > 0.0)
 
 func _look(delta: Vector2,sensitivity: float) -> void:
 	yaw = wrapf(yaw-delta.x*sensitivity,-PI,PI)
@@ -517,8 +600,9 @@ func _save_watch() -> void:
 		return
 	if mode == "tool" and instrument != null:
 		values[job] = instrument.snapshot()
+	uncanny = undercurrent.state()
 	var config := ConfigFile.new()
-	for field in ["watch","job","done","values","sample","sheet_readings","history","reports","last_pos","yaw","pitch","underway","returning","lamp_on"]:
+	for field in ["watch","job","done","values","sample","sheet_readings","history","reports","last_pos","yaw","pitch","underway","returning","lamp_on","uncanny"]:
 		config.set_value("watch",field,get(field))
 	if config.save(save_path+".tmp")==OK:
 		var error := DirAccess.rename_absolute(save_path+".tmp",save_path)
@@ -563,3 +647,4 @@ func _load_watch() -> void:
 	pitch = clampf(float(config.get_value("watch","pitch",0)),-1.565,1.565)
 	underway = bool(config.get_value("watch","underway",false)) and job>=0 and not done[job]
 	returning = underway and bool(config.get_value("watch","returning", false))
+	uncanny = config.get_value("watch","uncanny",{})

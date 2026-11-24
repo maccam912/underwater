@@ -23,6 +23,9 @@ var _helmet_medium: ShaderMaterial
 var _hose: MultiMesh
 var _collision := StaticBody3D.new()
 var _last_diver := Vector3(999, 999, 999)
+var _haze_density := 0.127
+var _lamp_gain := 1.0
+var fish: MultiMeshInstance3D
 
 func _ready() -> void:
 	_collision.name = "SolidSteel"
@@ -39,7 +42,8 @@ func _ready() -> void:
 	_hose_setup()
 	_lamp_haze()
 	_suspended_particles()
-	add_child(preload("res://world/jacket_fish.gd").new())
+	fish = preload("res://world/jacket_fish.gd").new()
+	add_child(fish)
 	update_diver(BELL)
 
 func _material(key: String, color: String, metal := 0.0, glow := 0.0, texture_path := "") -> void:
@@ -693,7 +697,13 @@ func _lamp_haze() -> void:
 
 func update_lamp_focus(half_angle: float, work := 0.0) -> void:
 	_helmet_medium.set_shader_parameter("slope",tan(deg_to_rad(half_angle)))
-	_helmet_medium.set_shader_parameter("density",lerpf(0.127,0.079,work))
+	_haze_density = lerpf(0.127,0.079,work)
+	_helmet_medium.set_shader_parameter("density",_haze_density*_lamp_gain)
+
+## A sputtering lamp lights less of the water in front of the helmet.
+func set_lamp_gain(gain: float) -> void:
+	_lamp_gain = gain
+	_helmet_medium.set_shader_parameter("density",_haze_density*_lamp_gain)
 
 func update_lamp(pose: Transform3D, enabled: bool) -> void:
 	_lamp_volume.global_transform = pose

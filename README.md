@@ -14,6 +14,7 @@ A single-player maintenance-diving game for Android and desktop, set beside the 
 - **A2 wall survey.** Check the gauge on a reference block, prepare marked spots on the jacket leg and seat the probe on clean steel. Lift and re-seat it to verify readings before logging the band. The signed sheet records the locations and measured thicknesses.
 - **B4 service-line guides.** Clean the saddle, bring the lined clamp half into position, start the captive fasteners and draw the halves down evenly. Finish with a preset wrench and check the gaps at the two mating edges.
 - **The bell.** The two dockets can be taken in either order. Swim back to Bell 2 and hand over. To return with unfinished work, choose **Get a bearing to the bell** in the pause menu and follow the umbilical home. The handover book keeps the actual readings and fitting checks from signed sheets. Finish both dockets to take another watch.
+- **The water.** You are alone out there. The jacket groans with the tide, the lamp is old, and the hardline sometimes picks up other voices. Ellis has an ordinary explanation for all of it. Nothing in the water will hurt you. Try switching the lamp off for a while.
 - **Saves.** The current watch, work in progress, tool settings, position, samples and signed sheets are stored on the device. Opening the app again offers **Resume watch** when you left the bell.
 
 ## Run and build
@@ -23,6 +24,7 @@ Install Git LFS before cloning. Run `git lfs pull` in an existing checkout. Open
 ```sh
 godot --headless --import --path .
 godot --headless --fixed-fps 60 --path . --script res://tests/smoke.gd
+SHOTS=/tmp/underwater-frames godot --path . --fixed-fps 60 --script res://tests/capture.gd   # windowed playtest frames
 ```
 
 GitHub Actions tests pushed commits, stamps the Android version, builds signed Android APKs and Linux x64, Windows x64 and universal macOS packages, and publishes them with SHA-256 checksums. The release title gives the workflow run and commit position. The Android APK retains a stable package identity and signing key for in-place updates. The macOS playtest is ad-hoc signed. Release signing credentials are held outside source control.

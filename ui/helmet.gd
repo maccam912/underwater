@@ -334,7 +334,7 @@ func set_lamp(enabled: bool) -> void:
 		lamp_on = enabled
 		queue_redraw()
 
-func update_helm(message: String, at_bell: bool, sheet_ready: bool, can_reach: bool) -> void:
+func update_helm(message: String, at_bell: bool, sheet_ready: bool, can_reach: bool, faint := false) -> void:
 	if mode != "dive" or not is_instance_valid(context_button):
 		return
 	var verb := "Call bell"
@@ -342,6 +342,8 @@ func update_helm(message: String, at_bell: bool, sheet_ready: bool, can_reach: b
 		verb = "Hand over" if sheet_ready else "Enter bell"
 	context_button.text = verb if touch else "[E] "+verb
 	radio_text.text = message
+	# Crosstalk on the hardline arrives thin and greenish, from no one in particular.
+	radio_text.add_theme_color_override("font_color",Color("93a99a") if faint else Color("#e0dcca"))
 	if in_reach != can_reach:
 		in_reach = can_reach
 		queue_redraw()

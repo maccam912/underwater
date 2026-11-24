@@ -42,7 +42,7 @@ Give the chamber equal weight in the full game. Let the player label a tape, dry
 
 ## Story proposal · the relief face
 
-Keep the following out of the first demo apart from a small optional note. The title of the game and the dive sheet should continue to sound like ordinary work.
+Keep the following out of the first demo apart from a small optional note and the deniable seeds described under *Dread with an explanation*. The title of the game and the dive sheet should continue to sound like ordinary work.
 
 **A discrepancy small enough to sign.** A weld photo from the prior shift shows a carrier just outside frame. You can find its shadow and its two clean witness marks, though the carrier itself is in your tool basket. Ellis says they probably lifted it between the photo and the handover. Most players will keep working. Those who manually compare their own photograph with the prior one will notice the file mark on Mara's shim has changed sides.
 
@@ -56,18 +56,48 @@ Keep the following out of the first demo apart from a small optional note. The t
 
 The player can pass on understanding and spare the next diver one bewildering experience. The process that reproduces the work and the worker continues. Leave open whether the archive has been making another platform, the second platform has been dictating the archive, or a person living at pressure simply moves between the two.
 
+## Dread with an explanation
+
+The fear in this game comes from the place, not from a threat. A diver alone at 126 metres is already in a frightening situation, so the game only has to stop reassuring them. Everything strange in the water has an ordinary explanation, and somebody on the crew gives it in a calm voice. The player decides whether to believe it. Nothing approaches, chases, grades or hurts the diver. The docket never changes because of something the diver saw.
+
+Four rules keep it honest.
+
+1. **Quiet first.** The first half minute outside is only the regulator, the jacket's hum and Ellis. Atmosphere is earned by ordinary time in the water.
+2. **Warmth makes the cold.** Ellis is kind and specific before anything goes wrong. A man keeping your toast warm is what makes a silent hardline unbearable.
+3. **One odd thing at a time.** Leave at least twenty seconds between beats. Let each one resolve completely. The lamp always comes back. The fish always return.
+4. **The explanation is plausible and slightly wrong.** The crew explains with what they can see from the bell. The diver can see a little more.
+
+### The first watch, beat by beat
+
+| On the watch clock | What happens | What the crew says |
+| --- | --- | --- |
+| Lock-out | Black water outside the wet porch. The hatch, then the regulator. Ellis's voice arrives before the eyes adjust. The view fades in over about three seconds. | "Diver's out. I have your line." The bearing follows once the diver can see. |
+| ~40 s | Nothing at all happens. | Ellis mentions the toast on the heater, butter side in. |
+| ~80 s | A long structural groan rises from far below. The jacket's machinery hum drops out for a while. A pressure wave jolts the helmet picture. The shoal bolts from the light and stays away for about a minute. The diver's breathing quickens and takes half a minute to settle. | "That's the jacket taking the tide. She talks when it turns." |
+| ~150 s | The helmet lamp sputters and dies for three seconds. In the dark a single cold work light shows deep inside the jacket, in a bay with no docket, beyond the reach of the umbilical. The lamp comes back on the breaker. The far light stays lit a moment longer, then goes out. | "Lost your lamp on the panel for a second. Breaker's reset itself." |
+| ~215 s | Static on the hardline. A thin, broken voice that belongs to nobody repeats Ellis's first words about your station. | If the diver calls the bell: "That wasn't me. Hardline's been quiet a good minute." |
+| Next swim through open water | Something long and pale slides across the far edge of the lamp under the bell. Held in the beam, it turns away and sinks out of sight. No sound marks it. | If the diver calls the bell: "A sleeper, maybe. They come up to the lights. It won't bother you." |
+
+After the groan, the water talks occasionally on its own. There are single dull knocks, a chain dragging somewhere overhead, and the tick of cold steel. Rarely there is a double knock, like a basket landing, which always comes from the bay with the far light. These sounds are muffled through water and give only a vague direction, as they do for a real diver.
+
+A diver who sits in the dark with their lamp off will find the far light again after a few seconds. Backscatter from their own lamp hides a faint light that far away, which is true underwater and is the in-world reason the light only shows in darkness. If the diver calls the bell while looking at it, Ellis says nobody has rigged lights in that bay and that it is probably their own lamp off a guide plate. Ellis does not know the diver's lamp is off. Sitting in the dark for long enough brings Noor on the line: "Your picture's gone black up here. Lamp?" Someone is always watching the helmet feed.
+
+Later watches move sooner and explain less. The tide line becomes "You know her by now." The lamp fault goes in the book for the technicians. The crosstalk repeats something Ellis said to you about your toast. On the third watch it asks Bell 2 to confirm two divers on the jacket. Each is still deniable as a crossed line or another vessel's tape.
+
+These are seeds for *the relief face*, not its rules. The far light is where the second drawing will later send the diver. The double knock is the sound used to align Mara's reels. The crosstalk is the other crew a few seconds past the end of the tape. A first-time player should be able to finish both dockets, hear every beat and still describe the watch as a normal day at work with a bad lamp.
+
 ## Picture, controls and sound
 
-The excursion begins at 126 metres in nearly black water. The helmet lamp strikes a single arc of a leg thick enough to hide the bell behind it. A diagonal continues past the edge of the light. A ladder rung, a hose clip and the diver’s hand establish scale. Grain sits down near the blacks. Suspended flakes turn through the beam at different distances. Fish passing between the braces briefly catch the lamp, then disappear into open water. Switch off the lamp and distant bell lights are among the few things still visible. A fine CRT scan and slight colour bleed give the helmet view the texture of an older signal. Keep the tooling legible through it. Shape the jacket from the underwater photographs in [the reference notebook](docs/underwater-references.md).
+The excursion begins at 126 metres in nearly black water. The helmet lamp strikes a single arc of a leg thick enough to hide the bell behind it. A diagonal continues past the edge of the light. A ladder rung, a hose clip and the diver’s hand establish scale. Grain sits down near the blacks. The edge of the faceplate mists faintly with every exhale and clears on the next draw, so a frightened diver sees their own breathing quicken. Suspended flakes turn through the beam at different distances. Fish passing between the braces briefly catch the lamp, then disappear into open water. Switch off the lamp and distant bell lights are among the few things still visible. A fine CRT scan and slight colour bleed give the helmet view the texture of an older signal. It is the same feed Noor watches from the ship. When the hardline crackles or the jacket moves, the signal tears for a moment. Keep the tooling legible through it. Shape the jacket from the underwater photographs in [the reference notebook](docs/underwater-references.md).
 
 Keep the paperwork at the bell. A thumb-stained sheet carries the short job list and the ink left by the previous watch. In the water a caption can carry a voice, then fade. Each piece of equipment carries its own controls. The ultrasonic gauge shows a live echo when the probe seats on steel. The two clamp halves and their captive fasteners sit on the actual service line.
 
 Landscape phone leads. Swim with the left thumb and look with the right. Swim into arm’s reach and use a free thumb directly on the equipment. The diver can swim or turn to look into open water during any step. Desktop players work with the left mouse button as they aim the helmet. The bellman tends the line and gives bearings over the hardline. Save signed work and instrument settings aboard the device.
 
-Use the Home Twenty method of generating named ElevenLabs sound effects at authoring time, shaping and looping locally, then shipping audio with the build. Outside the bell, the regulator has an ordinary working rhythm. Air flows in smoothly, the exhaust is softer, and there is a little silence before the next draw. Over a long job it should be easy to forget the diver is breathing. The contact of a tool still comes through clearly. Let the sound of good contact be short enough that a diver enjoys making it twice. A far-off knock can be part of the structure settling. Save music for a time when removing it can change the room.
+Use the Home Twenty method of generating named ElevenLabs sound effects at authoring time, shaping and looping locally, then shipping audio with the build. Outside the bell, the regulator has an ordinary working rhythm. Air flows in smoothly, the exhaust is softer, and there is a little silence before the next draw. Over a long job it should be easy to forget the diver is breathing. The contact of a tool still comes through clearly. Let the sound of good contact be short enough that a diver enjoys making it twice. A far-off knock can be part of the structure settling. Sounds from out in the structure go through a muffled, very large space and give only a rough direction. After a big sound the jacket's own hum falls silent for several seconds, and the silence should be the frightening part. Faster breathing is the only alarm the game uses. Save music for a time when removing it can change the room.
 
 ## Scope and playtest
 
-The slice tests leaving the bell, finding two nearby fixtures, doing two kinds of skilled work, reading feedback, and handing over. It can suggest a larger crew through written comms and a prior-watch note. Chamber exploration, a campaign, the second face, recorded dialogue and the ending belong to subsequent builds. No timer, oxygen economy, enemy or forced pursuit belongs in this prototype.
+The slice tests leaving the bell, finding two nearby fixtures, doing two kinds of skilled work, reading feedback, and handing over. It can suggest a larger crew through written comms and a prior-watch note. Chamber exploration, a campaign, the second face, recorded dialogue and the ending belong to subsequent builds. No timer, oxygen economy, enemy or forced pursuit belongs in this prototype. The animal at the edge of the light is an animal, and it always leaves.
 
-For a first phone test, hand someone the bell sheet without explaining the controls. Watch where they look for A2, whether they can tell a bad echo from a good one after one correction, and whether they choose the other docket after handing in the first. Ask which landmark they used on the swim home and what they thought the relief meant. A person who enjoyed the carrier but missed the mystery is a successful first watch. A person who understood the story but would skip the next job means the tools need more work.
+For a first phone test, hand someone the bell sheet without explaining the controls. Watch where they look for A2, whether they can tell a bad echo from a good one after one correction, and whether they choose the other docket after handing in the first. Ask which landmark they used on the swim home and what they thought the relief meant. Ask whether they turned the lamp off on purpose after it failed, whether they noticed the light in the far bay, and whether they wanted to swim to it. A player who pauses a job to stare into the dark has found the atmosphere. A player who stops working altogether means it is too loud. A person who enjoyed the carrier but missed the mystery is a successful first watch. A person who understood the story but would skip the next job means the tools need more work.
