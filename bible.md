@@ -62,7 +62,7 @@ Keep the paperwork at the bell. A thumb-stained sheet carries the short job list
 
 Landscape phone leads. Swim with the left thumb and look with the right. When a diver grips the fixture the body moves into reach and the thumb goes straight to the object in the scene. Back away whenever you like. Desktop players point and drag with the mouse or use the tool keys. The bell tends the line and can offer a bearing in the dark. Save signed work and instrument settings aboard the device.
 
-Use the Home Twenty method of generating named ElevenLabs sound effects at authoring time, shaping and looping locally, then shipping audio with the build. Distinguish the bell machinery bed from breathing outside and damped tool contact. Let the sound of good contact be short enough that a diver enjoys making it twice. A far-off knock can be part of the structure settling. Save music for a time when removing it can change the room.
+Use the Home Twenty method of generating named ElevenLabs sound effects at authoring time, shaping and looping locally, then shipping audio with the build. Outside the bell, the regulator has an ordinary working rhythm. Air flows in smoothly, the exhaust is softer, and there is a little silence before the next draw. Over a long job it should be easy to forget the diver is breathing. The contact of a tool still comes through clearly. Let the sound of good contact be short enough that a diver enjoys making it twice. A far-off knock can be part of the structure settling. Save music for a time when removing it can change the room.
 
 ## Scope and playtest
 

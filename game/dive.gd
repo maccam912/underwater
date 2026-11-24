@@ -76,21 +76,22 @@ func _ready() -> void:
 	camera.far = 110
 	# A warm sealed-beam work lamp sits above the diver’s left temple.
 	light.name = "HelmetLamp"
-	light.position = Vector3(-0.16,0.14,0)
+	light.position = Vector3(-0.24,0.16,0.02)
 	light.rotation.y = -0.018
-	light.light_color = Color("#e9ebd5")
-	light.spot_range = 32.0
-	light.spot_attenuation = 0.48
-	light.spot_angle_attenuation = 0.85
+	light.light_color = Color("#f1eaca")
+	light.spot_range = 28.0
+	light.spot_attenuation = 0.54
+	light.spot_angle_attenuation = 2.85
 	light.shadow_enabled = true
 	light.shadow_bias = 0.11
 	light.shadow_reverse_cull_face = true
 	camera.add_child(light)
 	spill.name = "LampSpill"
 	spill.position = light.position
-	spill.light_color = Color("#b8c6b5")
-	spill.spot_range = 15.0
-	spill.spot_attenuation = 0.52
+	spill.light_color = Color("#9ebbb3")
+	spill.spot_range = 13.5
+	spill.spot_attenuation = 0.72
+	spill.spot_angle_attenuation = 2.65
 	camera.add_child(spill)
 	add_child(sound)
 	add_child(interface)
@@ -128,17 +129,19 @@ func _set_light(active: bool) -> void:
 
 func _focus_lamp(work: float) -> void:
 	# Flood at the workface so the diver can read both sides of the fitting.
-	light.spot_angle = lerpf(26.0,42.0,work)
-	light.light_energy = lerpf(2.65,1.1,work)
-	spill.spot_angle = lerpf(48.0,58.0,work)
-	spill.light_energy = lerpf(0.72,0.85,work)
+	light.spot_angle = lerpf(33.0,48.0,work)
+	light.light_energy = lerpf(3.6,1.25,work)
+	spill.spot_angle = lerpf(57.0,61.0,work)
+	spill.light_energy = lerpf(0.83,0.86,work)
+	jacket.update_lamp_focus(light.spot_angle, work)
 
 func _stage_camera() -> void:
 	jacket.update_diver(Vector3(9,-5,18))
 	camera.position = Vector3(-11.5,-1.4,12.2)
 	camera.look_at(Vector3(-4.7,0.35,-5.2), Vector3.UP)
 	light.rotation.y = deg_to_rad(-21.0)
-	light.spot_angle = 38.0
+	light.spot_angle = 41.0
+	jacket.update_lamp_focus(light.spot_angle)
 	spill.rotation.y = light.rotation.y
 	_set_light(true)
 

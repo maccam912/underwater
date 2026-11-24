@@ -30,7 +30,18 @@ void fragment() {
 	vec3 iron = steel * vec3(1.13,0.77,0.59) * (0.70 + freckles*0.52);
 	vec3 surface = mix(steel*coating.rgb, undercoat, blister*0.72);
 	ALBEDO = mix(surface,iron,smoothstep(0.64,0.73,exposure)) + scale_edge*vec3(0.014,0.012,0.007);
-	METALLIC = 0.04;
-	ROUGHNESS = 0.90;
-	SPECULAR = 0.18;
+	// Use the existing worn texture as a shallow relief map. Derivatives keep
+	// the relief in metres across different-sized piles and tapered braces.
+	float steel_luma = dot(steel, vec3(0.22, 0.68, 0.10));
+	float height = 0.020*steel_luma + 0.010*blister + 0.0025*scale_edge;
+	vec3 px = dFdx(VERTEX);
+	vec3 py = dFdy(VERTEX);
+	vec3 u = cross(py,NORMAL);
+	vec3 v = cross(NORMAL,px);
+	float area = dot(px,u);
+	vec3 gradient = (u*dFdx(height) + v*dFdy(height)) * sign(area) / max(abs(area),0.000001);
+	NORMAL = normalize(NORMAL - gradient);
+	METALLIC = mix(0.16,0.025,blister);
+	ROUGHNESS = mix(0.59,0.97,blister);
+	SPECULAR = mix(0.34,0.15,blister);
 }

@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the game's sound library with ElevenLabs. Requires Python 3.9+."""
+"""Generate the game's sound library with ElevenLabs. Requires Python 3.9+ and FFmpeg for the regulator loop."""
 
 import argparse
+from array import array
 from dataclasses import dataclass
 import fcntl
 import http.client
 import json
 import os
 from pathlib import Path
+from shutil import which
 import stat
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -31,7 +34,7 @@ class Cue:
 CUES = {
     "bell": Cue(12, True, "Field recording inside a cramped steel offshore diving bell. A steady ventilation blower close to the mic, a low electrical hum and the small irregular bearing rustle of an ageing fan. Warm enclosed dry machinery room tone. Even level throughout. No voices, music, drums, impacts or outside water."),
     "steel": Cue(15, True, "Quiet deep subsea platform jacket as heard by a worker beside a steel piling. Distant continuous machinery transmitted through a vast hollow steel tube, very soft midrange hydraulic whine over a dull low vibration. Sparse, ordinary industrial field ambience with occasional tiny ticks. No music, whale calls, sonar pings, surf or dramatic crescendos."),
-    "breath": Cue(12, True, "Intimate point of view inside a commercial work diver's helmet. Two calm unhurried breathing cycles through a demand regulator, a soft fine air hiss on the inhale, softer low soft exhalation with a long natural space between breaths. Comfortable and measured. Very close mic. No speech, splashes, music, bubbling or gasping."),
+    "breath": Cue(18, True, "Inside a sealed commercial diving helmet. Only the air valve: a smooth two-second shhh of demand air, a softer lower two-second outflow, a short quiet rest. Repeat four times at ordinary resting cadence. No tremor, voiced throat, shivering, chattering teeth, gasps, sniffing, bubbles or music. Boring warm steady equipment Foley with each breath very similar to the last. Seamless loop."),
     "comms": Cue(0.55, False, "One very quiet dull contact click and a trace of wire noise coming from a small wired industrial intercom earpiece. Close dry foley, crisp immediate attack. No radio tuning, beeps, ringing, speech, or music."),
     "adjust": Cue(0.55, False, "One precise little tactile notch from a knurled metal instrument selector, moved one detent by a gloved thumb underwater. Short dark tick transmitted through the instrument housing. Immediate onset. One click only; no beep, squeak or speech."),
     "accept": Cue(0.85, False, "One small positive closing click from a steel over-centre instrument latch fitting home, a tick and a deeper seated clunk in quick succession. Damp, close, solid and satisfying, restrained with no long tail. No music, beeps, ringing or speech."),
@@ -68,8 +71,56 @@ def looks_like_mp3(header):
     return header[:3] == b"ID3" or (len(header) >= 2 and header[0] == 0xFF and header[1] & 0xE0 == 0xE0)
 
 
+def regular_breath(recording):
+    """Cut four ordinary cycles from steady passages of the recorded demand valve."""
+    ffmpeg = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"]
+    preview = subprocess.run(ffmpeg + ["-i", "pipe:0", "-ac", "1", "-ar", "8000", "-f", "s16le", "pipe:1"],
+                             input=recording, capture_output=True, check=True).stdout
+    samples = array("h")
+    samples.frombytes(preview)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    # The generator varies where the valve opens. Choose a continuous, even
+    # passage in each quarter, well clear of clicks and gaps between openings.
+    blocks = [samples[i:i+400] for i in range(0, len(samples)-399, 400)]
+    power = [sum(x*x for x in block) / len(block) for block in blocks]
+    width = 20  # one second, in 50 ms blocks
+    takes = []
+    for quarter in range(4):
+        start, end = len(power)*quarter//4, len(power)*(quarter+1)//4
+        if end-start < width:
+            raise ValueError("Regulator recording is too short to cut four cycles.")
+        def stability(index):
+            window = sorted(power[index:index+width])
+            return window[2] / max(1.0, window[-3])**0.30
+        best = max(range(start, end-width+1), key=stability)
+        takes.append(best*0.05)
+
+    filters, clips = [], []
+    for i, period in enumerate((4.55, 4.72, 4.48, 4.65)):
+        inhale = period*0.36
+        exhale = period*0.43
+        # Slower air leaving the helmet is lower and softer than the intake.
+        phases = [(takes[i], inhale, 3000, 0.0, 0.12), (takes[(i+1)%4], exhale, 1150, -2.5, period-inhale-exhale-0.12)]
+        for j, (source, duration, cutoff, gain, gap) in enumerate(phases):
+            tag = f"phase{i}{j}"
+            rate = round(44100/duration)
+            filters.append(f"[0:a]atrim=start={source:.3f}:duration=1.0,asetpts=PTS-STARTPTS,"
+                           f"aresample=44100,asetrate={rate},aresample=44100,highpass=f=100,lowpass=f={cutoff},"
+                           f"volume={gain}dB,afade=t=in:d={duration*0.22:.3f}:curve=qsin,"
+                           f"afade=t=out:st={duration*0.58:.3f}:d={duration*0.42:.3f}:curve=qsin,"
+                           f"apad=pad_dur={gap:.3f}[{tag}]")
+            clips.append(f"[{tag}]")
+    filters.append("".join(clips) + "concat=n=8:v=0:a=1,loudnorm=I=-31:TP=-9:LRA=6,aresample=44100[loop]")
+    return subprocess.run(ffmpeg + ["-i", "pipe:0", "-filter_complex", ";".join(filters), "-map", "[loop]",
+                                     "-ac", "1", "-codec:a", "libmp3lame", "-b:a", "128k", "-f", "mp3", "pipe:1"],
+                          input=recording, capture_output=True, check=True).stdout
+
+
 def generate(name, key, destination):
     cue = CUES[name]
+    if name == "breath" and which("ffmpeg") is None:
+        raise ValueError("Install FFmpeg before generating the regulator loop.")
     body = json.dumps({
         "text": cue.prompt,
         "duration_seconds": cue.seconds,
@@ -91,6 +142,11 @@ def generate(name, key, destination):
         raise ValueError(f"{name}: ElevenLabs returned HTTP {error.code}. Check key permissions, credits and rate limits.") from None
     except http.client.IncompleteRead:
         raise ValueError(f"{name}: transfer ended early. No audio file was written.") from None
+    if name == "breath":
+        try:
+            sound = regular_breath(sound)
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"Could not prepare the regulator loop: {error.stderr.decode(errors='replace').strip()}") from None
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{name}-", delete=False) as handle:

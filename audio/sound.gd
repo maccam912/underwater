@@ -16,7 +16,7 @@ const FOLEY := {
 }
 # Recording-specific gains are measured against the other cues in the mix.
 const LEVEL_DB := {
-	"bell": 0.0, "steel": 11.0, "breath": 29.0,
+	"bell": 0.0, "steel": 11.0, "breath": -4.0,
 	"comms": 1.0, "adjust": 13.0, "accept": -7.0,
 	"reject": -5.0, "hatch": -10.0,
 }

@@ -18,7 +18,8 @@ var _materials: Dictionary = {}
 var _shapes: Dictionary = {}
 var _groups: Dictionary = {}
 var _station_leds: Array[MeshInstance3D] = []
-var _lamp_volume: MultiMeshInstance3D
+var _lamp_volume: MeshInstance3D
+var _helmet_medium: ShaderMaterial
 var _hose: MultiMesh
 var _collision := StaticBody3D.new()
 var _last_diver := Vector3(999, 999, 999)
@@ -519,14 +520,24 @@ func _work_light(at: Vector3, warm: bool) -> void:
 	_box(at+Vector3(0,0.17,0.09),Vector3(0.72,0.045,0.55),"edge")
 	for x in [-0.15,0.0,0.15]:
 		_box(at+Vector3(x,-0.02,0.214),Vector3(0.018,0.22,0.02),"iron")
-	var light := OmniLight3D.new()
-	light.position = at + Vector3(0,0,0.65)
-	light.light_color = Color("ffcb8d") if warm else Color("cee7ce")
-	light.light_energy = 0.56
-	light.omni_range = 2.3
-	light.omni_attenuation = 1.2
+	# A hooded work light points down the plate. The bulb is a navigation mark
+	# from across the bay; its light only reaches the surrounding fitting.
+	var light := SpotLight3D.new()
+	light.position = at + Vector3(0,-0.07,0.33)
+	light.light_color = Color("ffc38c") if warm else Color("b7d7c9")
+	light.light_energy = 2.05
+	light.spot_range = 4.3
+	light.spot_attenuation = 0.95
+	light.spot_angle = 66.0
+	light.spot_angle_attenuation = 2.5
+	light.shadow_enabled = true
+	light.shadow_bias = 0.06
 	add_child(light)
-	_scatter(at + FRONT*0.24, 1.3, warm)
+	var direction := Vector3(-0.28 if warm else 0.32,-1.0,0.08).normalized()
+	light.look_at(light.global_position + direction, UP)
+	var water := _beam_water(3.75,0.88,0.22,light.light_color)
+	light.add_child(water)
+	_scatter(at + FRONT*0.245,1.56,warm)
 
 func _scatter(at: Vector3, radius: float, warm: bool) -> void:
 	var skin := ShaderMaterial.new()
@@ -643,33 +654,37 @@ func update_diver(pos: Vector3) -> void:
 		_hose.set_instance_transform(i,Transform3D(frame,(sample+last)*0.5))
 		last = sample
 
-# Four depth-tested, feathered cross sections integrate a little light scattered by the
-# water before it reaches the eye. Nearby opaque steel occludes the farther sections.
-func _lamp_haze() -> void:
-	var mesh := QuadMesh.new()
+func _beam_water(reach: float, slope: float, density: float, tint: Color) -> MeshInstance3D:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://world/lamp_haze.gdshader")
-	mesh.material = material
-	var sections := PackedFloat32Array([1.8,3.9,7.3,13.1])
-	var layer := MultiMesh.new()
-	layer.transform_format = MultiMesh.TRANSFORM_3D
-	layer.mesh = mesh
-	layer.instance_count = sections.size()
-	for i in sections.size():
-		var d := sections[i]
-		var diameter := 1.06*d
-		layer.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3(diameter,diameter,1.0)),Vector3.FORWARD*d))
-	_lamp_volume = MultiMeshInstance3D.new()
+	material.set_shader_parameter("reach",reach)
+	material.set_shader_parameter("slope",slope)
+	material.set_shader_parameter("density",density)
+	material.set_shader_parameter("water_color",tint)
+	var mesh := BoxMesh.new()
+	var diameter := 2.0 * (0.075 + reach*slope)
+	mesh.size = Vector3(diameter,diameter,reach)
+	var volume := MeshInstance3D.new()
+	volume.mesh = mesh
+	volume.custom_aabb = AABB(Vector3(-diameter*0.5,-diameter*0.5,-reach),mesh.size)
+	volume.material_override = material
+	volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return volume
+
+func _lamp_haze() -> void:
+	_lamp_volume = _beam_water(19.0,1.12,0.16,Color("81a69a"))
 	_lamp_volume.name = "IlluminatedWater"
-	_lamp_volume.multimesh = layer
-	_lamp_volume.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_helmet_medium = _lamp_volume.material_override
 	_lamp_volume.visible = false
 	add_child(_lamp_volume)
 
+func update_lamp_focus(half_angle: float, work := 0.0) -> void:
+	_helmet_medium.set_shader_parameter("slope",tan(deg_to_rad(half_angle)))
+	_helmet_medium.set_shader_parameter("density",lerpf(0.16,0.085,work))
+
 func update_lamp(pose: Transform3D, enabled: bool) -> void:
-	if _lamp_volume != null:
-		_lamp_volume.global_transform = pose
-		_lamp_volume.visible = enabled
+	_lamp_volume.global_transform = pose
+	_lamp_volume.visible = enabled
 
 func _suspended_particles() -> void:
 	_particle_layer("Silt", 1880, 7.7, 0.018, false, 582)

@@ -161,12 +161,12 @@ func _surface(key:String, tint:String, tex:Texture2D = null) -> void:
 		return
 	var skin := StandardMaterial3D.new()
 	skin.albedo_color = Color(tint)
-	skin.roughness = .88
-	if tex:
-		skin.albedo_texture = tex
-		skin.uv1_triplanar = true
-		skin.uv1_world_triplanar = true
-		skin.uv1_scale = Vector3.ONE*2.5
+	# The meter's enamel still carries a soft reflection between chips.
+	skin.roughness = .52 if tex == ENAMEL else .88
+	skin.albedo_texture = tex
+	skin.uv1_triplanar = true
+	skin.uv1_world_triplanar = true
+	skin.uv1_scale = Vector3.ONE*2.5
 	_surfaces[key] = skin
 
 func _primitive(kind:String) -> PrimitiveMesh:
@@ -232,7 +232,10 @@ func _flush() -> void:
 				instances.set_instance_transform(i,poses[i])
 			var draw:=MultiMeshInstance3D.new()
 			draw.multimesh=instances
-			draw.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# The case, shoes and gauntlet cast distinct silhouettes. Fine
+			# scratches and engraved ticks share their parent’s shadow.
+			var casts := key in ["box|ochre","6|brass","round|glove","10|sleeve","10|red"]
+			draw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if casts else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			draw.material_override=_surfaces[parts[1]]
 			parent.add_child(draw)
 	_batch.clear()
@@ -286,6 +289,7 @@ func _survey() -> void:
 	scope.mesh=face
 	_glass=ShaderMaterial.new()
 	_glass.shader=GLASS
+	_glass.set_shader_parameter("wear",STEEL)
 	scope.material_override=_glass
 	scope.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	scope.position=GLASS_C-METER
@@ -389,7 +393,7 @@ func _make_forearm() -> void:
 	_forearm=MeshInstance3D.new()
 	_forearm.mesh=sleeve
 	_forearm.material_override=_surfaces["sleeve"]
-	_forearm.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_forearm.cast_shadow=GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	_content.add_child(_forearm)
 
 func _pose_arm(hand:Node3D) -> void:

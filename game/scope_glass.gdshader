@@ -1,5 +1,6 @@
 shader_type spatial;
-render_mode unshaded, cull_disabled;
+render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
+uniform sampler2D wear : repeat_enable, filter_linear_mipmap;
 uniform float gate = 3.0;
 uniform float wall = 9.0;
 uniform bool contact = false;
@@ -27,5 +28,12 @@ void fragment() {
 	vec3 phosphor=vec3(.025,.061,.049)+grid*vec3(.027,.056,.039);
 	phosphor+=(signal+glow)*vec3(.31,.68,.34);
 	phosphor+=cursor*vec3(.66,.40,.13);
-	ALBEDO=phosphor*vignette;
+	// The trace is self-lit. The slightly bowed, scuffed cover only catches
+	// light from the helmet or from a nearby work lamp as the diver turns.
+	float scuff = texture(wear, p * vec2(0.64, 0.37)).g;
+	NORMAL_MAP = normalize(vec3((p.x-.5)*.22, (.5-p.y)*.15, 1.0))*.5+.5;
+	ALBEDO = vec3(.012,.023,.019) * (.70 + .55 * scuff);
+	ROUGHNESS = mix(.20,.43,smoothstep(.22,.57,scuff));
+	SPECULAR = .18;
+	EMISSION = phosphor*vignette;
 }
