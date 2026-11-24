@@ -1,6 +1,6 @@
 # Underwater
 
-A single-player maintenance-diving game for Android and desktop, set beside the east jacket of a fictional North Sea oil platform. Start in Bell 2 at 126 metres. Take a work docket, find the marked steel, brace against the fixture, and bring a reading or a fitted carrier back for the next diver.
+A single-player maintenance-diving game for Android and desktop, set beside the east jacket of a fictional North Sea oil platform. At 126 metres, you leave Bell 2 alone. Ellis tends your line, Noor supervises from the ship, and Mara takes the relief watch. Each docket takes you between marked work positions along the steel. The helmet view has a CRT filter, and fish move through the light around the jacket.
 
 [Download the latest Android APK](https://github.com/maccam912/underwater/releases/latest/download/Underwater-Android.apk) · [Desktop downloads and checksums](https://github.com/maccam912/underwater/releases/latest) · [Design bible and field research](bible.md)
 
@@ -8,12 +8,13 @@ A single-player maintenance-diving game for Android and desktop, set beside the 
 
 ## Play the first watch
 
-- **Phone.** Swim with the left thumb and look with the right. Look up or down as you fin to change depth. Touch the lamp icon to switch the helmet beam. **Call bell** faces you toward the work or home. Swim up to the tagged fixture, touch **Brace**, then work directly on the hardware. **Let go** releases your grip.
-- **Desktop.** WASD or arrows swim. Mouse looks. Space rises, Q descends, F switches the lamp, E calls the bell or braces. Point and drag to work. Right-drag moves your head while braced. E or Esc lets go, Esc during the swim pauses.
-- **A2 wall survey.** Put the cabled probe on the bare round patch. Drag the gate on the meter glass to the first strong reflection after the initial pulse. Press the red MARK button on the meter. With a keyboard, Space plants the probe, left/right turn the dial, and Enter records.
-- **B4 survey clamp.** Drag each shoe up or down until its nick meets the fixed brass mark, then throw the central latch. Left/right adjust the left shoe, up/down adjust the right, and Enter throws the latch. A proud foot can be reset in place.
-- **The bell.** The two dockets can be taken in either order. A rejected reading leaves the tool in your hands. Pause and choose **Follow line back to bell** for a tended return. Finish both dockets to start another watch with fresh readings. The handover book carries the latest signed entries and a note from Mara.
-- **Saves.** The current watch, tool settings, position, samples and signed sheets are stored on the device. Opening the app again offers **Resume watch** when you left the bell.
+- **Phone.** Swim with your left thumb. Drag open water to look in any direction. Aim up or down as you fin to change depth. When you reach a fixture, touch its hardware to work. You can keep swimming, look over your shoulder or leave the tool at any time.
+- **Desktop.** WASD or arrows swim. Mouse looks, Space rises, Q descends and F switches the lamp. Bring the fitting within reach, aim the centre of the helmet and hold the left mouse button to use a tool. Esc pauses.
+- **Finding the work.** Use **Call bell** or press E for a clock bearing, height difference and range relative to your current heading. Ellis also gives bearings to Bell 2 when your sheet is ready.
+- **A2 wall survey.** Check the gauge on a reference block, prepare marked spots on the jacket leg and seat the probe on clean steel. Lift and re-seat it to verify readings before logging the band. The signed sheet records the locations and measured thicknesses.
+- **B4 service-line guides.** Clean the saddle, bring the lined clamp half into position, start the captive fasteners and draw the halves down evenly. Finish with a preset wrench and check the gaps at the two mating edges.
+- **The bell.** The two dockets can be taken in either order. Swim back to Bell 2 and hand over. To return with unfinished work, choose **Get a bearing to the bell** in the pause menu and follow the umbilical home. The handover book keeps the actual readings and fitting checks from signed sheets. Finish both dockets to take another watch.
+- **Saves.** The current watch, work in progress, tool settings, position, samples and signed sheets are stored on the device. Opening the app again offers **Resume watch** when you left the bell.
 
 ## Run and build
 

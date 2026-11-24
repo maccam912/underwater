@@ -3,11 +3,11 @@ extends Node3D
 const Jacket = preload("res://world/jacket.gd")
 const Helmet = preload("res://ui/helmet.gd")
 const Sound = preload("res://audio/sound.gd")
-const FieldTool = preload("res://game/field_tool.gd")
+const SurveyWork = preload("res://game/survey_work.gd")
+const ClampWork = preload("res://game/clamp_work.gd")
 const Visor = preload("res://ui/visor.gdshader")
 const TAGS := ["A2", "B4"]
 const BELL := Jacket.BELL
-const SITES := [Jacket.A2, Jacket.B4]
 const REACH := 2.15
 const BELL_REACH := 3.0
 const EXCURSION := 42.0
@@ -24,32 +24,34 @@ var hud = Helmet.new()
 var sound = Sound.new()
 var tools_at_sites: Array[Node3D] = []
 var instrument: Node3D
-var brace_start := Transform3D.IDENTITY
-var brace_time := 0.0
-var brace_duration := 0.8
-var work_look := Vector2.ZERO
-var work_look_finger := -1
-var work_hint_time := 0.0
+var last_hand_view := Transform3D.IDENTITY
+var work_hint := ""
+var lamp_focus := 0.0
 var interface := CanvasLayer.new()
 var mode := "title"
 var watch := 1
 var done := [false,false]
 var values := [[-1,-1],[-1,-1]]
 var history: Array = []
+var reports: Array = []
 var job := -1
 var sample := ""
-var brief := "Ellis has the bell. Choose a docket when you’re ready."
+var sheet_readings: Array = []
+var brief := "Just you outside. Ellis tends your line. Noor has you on the hardline."
 var callout := ""
 var radio_time := 0.0
 var yaw := 0.0
 var pitch := 0.0
 var last_pos := BELL
 var underway := false
+var returning := false
 var move_finger := -1
 var look_finger := -1
 var move_origin := Vector2.ZERO
 var stick := Vector2.ZERO
 var save_tick := 0.0
+var work_dirty := false
+var last_tool_sound := -1000
 var touch := false
 var save_path := "user://watch.cfg"
 var ready_for_save := false
@@ -106,12 +108,13 @@ func _ready() -> void:
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.command.connect(_command)
 	for i in 2:
-		var field_tool := FieldTool.new()
+		var field_tool: Node3D = SurveyWork.new() if i == 0 else ClampWork.new()
 		jacket.add_child(field_tool)
 		tools_at_sites.append(field_tool)
 		field_tool.adjusted.connect(_tool_adjusted)
 		field_tool.submitted.connect(_tool_submitted)
 		field_tool.hint_changed.connect(_tool_hint)
+		field_tool.station_changed.connect(_station_changed)
 		_prepare_site(i)
 	ready_for_save = true
 	_show("title")
@@ -149,17 +152,18 @@ func _show(next: String) -> void:
 	if instrument != null:
 		instrument.set_working(false)
 		instrument = null
+	work_hint = ""
 	mode = next
 	stick = Vector2.ZERO
 	hud.joystick = Vector2.ZERO
 	hud.joystick_origin = Vector2.ZERO
 	move_finger = -1
 	look_finger = -1
-	work_look_finger = -1
 	diver.velocity = Vector3.ZERO
 	if DisplayServer.get_name() != "headless" and not touch:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if next=="dive" else Input.MOUSE_MODE_VISIBLE
-	_focus_lamp(0.0)
+	lamp_focus = 0.0
+	_focus_lamp(lamp_focus)
 	light.rotation.y = -0.018
 	spill.rotation.y = 0.0
 	if next in ["title","board","log"]:
@@ -167,17 +171,10 @@ func _show(next: String) -> void:
 	else:
 		_align_camera()
 	sound.set_outside(next in ["dive","tool","pause"])
-	hud.display(next,{"touch":touch,"watch":watch,"done":done,"job":job,"message":brief,"history":history,"resume":underway})
+	var stops := [tools_at_sites[0].station_name(), tools_at_sites[1].station_name()]
+	hud.display(next,{"touch":touch,"watch":watch,"done":done,"job":job,"message":brief,"history":history,"reports":reports,"stops":stops,"resume":underway,"returning":returning,"sheet_ready":not sample.is_empty()})
 	hud.set_lamp(lamp_on)
-	if next == "tool":
-		instrument = tools_at_sites[job]
-		brace_start = camera.global_transform
-		brace_time = 0.0
-		brace_duration = clampf(diver.position.distance_to(instrument.stance()) / 2.2,0.35,1.5)
-		work_look = Vector2.ZERO
-		instrument.set_working(true)
-		_tool_hint(instrument.instruction(touch))
-	elif next == "dive":
+	if next == "dive":
 		_update_helm()
 
 func _command(action: String) -> void:
@@ -198,11 +195,10 @@ func _command(action: String) -> void:
 				values = [[-1,-1],[-1,-1]]
 				for i in 2:
 					_prepare_site(i)
-				brief = "Mara moved the survey kit to the next pair of pads."
+				brief = "Mara’s relief sheet is in. Same crew today. Ellis has the bell."
 				_save_watch()
 				_show("board")
 		"context": _context()
-		"unbrace": _release_grip()
 		"lamp":
 			if mode in ["dive","tool"]:
 				lamp_on = not lamp_on
@@ -210,9 +206,15 @@ func _command(action: String) -> void:
 				hud.set_lamp(lamp_on)
 				sound.cue("adjust")
 				_save_watch()
-		"pause": _show("pause")
+		"pause":
+			_show("pause")
+			_save_watch()
 		"continue": _show("dive")
-		"recover": _at_bell()
+		"recover","resume_job":
+			returning = action == "recover"
+			_show("dive")
+			_say("Ellis — " + _bearing())
+			_save_watch()
 		"log","board","title":
 			if mode in ["dive","pause","tool"]:
 				_save_watch()
@@ -223,15 +225,15 @@ func _take_job(index: int) -> void:
 		return
 	job = index
 	sample = ""
+	sheet_readings.clear()
 	underway = true
+	returning = false
 	diver.position = BELL
-	_face(Vector3(0.2,-0.7,-9.0))
 	last_pos = BELL
 	sound.cue("hatch")
 	_show("dive")
-	var direction := "left, at the upright" if job==0 else "right and slightly down"
-	var controls := "Swim left thumb, look right thumb." if touch else "WASD to fin. F for your lamp."
-	_say("Noor — %s is %s. %s" % [TAGS[job],direction,controls],13)
+	var controls := "Left thumb swims. Drag the water to look." if touch else "WASD to fin. Mouse to look."
+	_say("Ellis — I have your line. %s %s" % [_bearing(), controls], 10)
 	_save_watch()
 
 func _at_bell() -> void:
@@ -239,26 +241,26 @@ func _at_bell() -> void:
 	diver.position = BELL
 	last_pos = BELL
 	underway = false
+	returning = false
 	if job>=0 and not sample.is_empty():
 		done[job] = true
-		history.append("Watch %02d   ·   %s" % [watch,sample])
-		if history.size()>12:
-			history.pop_front()
+		var entry := "Watch %02d   ·   %s" % [watch,sample]
+		history.append(entry)
+		if not sheet_readings.is_empty():
+			reports.append({"watch": watch, "tag": TAGS[job], "entry": entry, "readings": sheet_readings.duplicate(true)})
+		if history.size() > 12:
+			var expired: String = history.pop_front()
+			if not reports.is_empty() and reports.front().entry == expired:
+				reports.pop_front()
 		brief = "Signed by Noor. " + sample
 		job = -1
 		sample = ""
+		sheet_readings.clear()
 		sound.cue("accept")
 	else:
-		brief = "Back on the bell. Your tool settings are on the sheet."
+		brief = "Back on the bell. Your place and tool settings are on the sheet."
 	_show("board")
 	_save_watch()
-
-func _face(point: Vector3) -> void:
-	var offset := point-diver.position
-	if offset.length_squared()<0.001:
-		return
-	yaw = atan2(-offset.x,-offset.z)
-	pitch = asin(clampf(offset.normalized().y,-1,1))
 
 func _align_camera() -> void:
 	camera.position = diver.position
@@ -266,40 +268,81 @@ func _align_camera() -> void:
 	_set_light(lamp_on)
 
 func _target() -> Vector3:
-	return BELL if not sample.is_empty() or job<0 else SITES[job]
+	return BELL if _heading_home() or job < 0 else tools_at_sites[job].swim_target()
 
-func _can_work() -> bool:
-	if job < 0 or diver.position.distance_to(SITES[job]) >= REACH:
+func _heading_home() -> bool:
+	return returning or not sample.is_empty()
+
+func _can_work(reach: float) -> bool:
+	if job < 0 or _heading_home():
 		return false
-	return diver.position.z > tools_at_sites[job].focus_point().z + 0.2
+	var tool := tools_at_sites[job]
+	var offset: Vector3 = tool.focus_point() - diver.position
+	return (offset.length_squared() <= reach * reach and tool.to_local(diver.global_position).z > 0.15
+			and -camera.global_basis.z.dot(offset.normalized()) > 0.02)
+
+func _bearing() -> String:
+	var offset := _target() - diver.position
+	var station: String = "Bell 2" if _heading_home() else tools_at_sites[job].station_name()
+	if offset.length() < 0.8:
+		return "%s is within reach." % station
+	var vertical := ""
+	if absf(offset.y) > 1.0:
+		vertical = ", %.0f m %s" % [absf(offset.y), "above" if offset.y > 0.0 else "below"]
+	if Vector2(offset.x, offset.z).length() < 1.0:
+		return "%s%s you." % [station, vertical] if not vertical.is_empty() else "%s is within reach." % station
+	var clockwise := wrapf(yaw - atan2(-offset.x, -offset.z), -PI, PI)
+	var hour := posmod(roundi(clockwise * 12.0 / TAU), 12)
+	return "%s, %d o’clock%s. Range %.0f m." % [station, 12 if hour == 0 else hour, vertical, offset.length()]
 
 func _context() -> void:
-	if mode != "dive":
+	if mode not in ["dive","tool"]:
 		return
-	if not sample.is_empty() and diver.position.distance_to(BELL)<BELL_REACH:
+	if _heading_home() and diver.position.distance_to(BELL) < BELL_REACH:
 		_at_bell()
-	elif sample.is_empty() and _can_work():
-		_show("tool")
 	else:
-		_face(_target())
-		_align_camera()
-		_say("Ellis  /  Bell lamp straight ahead. I’ve got your line." if not sample.is_empty() else "Noor  /  On that heading. Look for the %s plate."%TAGS[job])
+		_say("Ellis — " + _bearing())
 
-func _release_grip() -> void:
+func _leave_work() -> void:
+	if instrument == null:
+		return
+	instrument.set_working(false)
+	instrument = null
+	mode = "dive"
+	work_hint = ""
+	_save_watch()
+
+func _update_work() -> void:
 	if mode == "tool":
-		_show("dive")
-		if not sample.is_empty():
-			_say("Noor — Got it. Bring the sheet home.",5.0)
+		if not _can_work(REACH + 0.35):
+			_leave_work()
+	elif _can_work(REACH):
+		instrument = tools_at_sites[job]
+		mode = "tool"
+		radio_time = 0.0
+		instrument.set_working(true)
+		_tool_hint(instrument.instruction(touch))
 
 func _tool_hint(words: String) -> void:
 	if mode == "tool":
-		work_hint_time = 9.0
-		hud.update_work(words)
+		work_hint = words
+		_update_helm()
 
 func _tool_adjusted(settings: Array) -> void:
-	values[job] = settings.duplicate()
-	sound.cue("adjust")
-	_save_watch()
+	if mode != "tool" or instrument == null:
+		return
+	values[job] = settings.duplicate(true)
+	work_dirty = true
+	if Time.get_ticks_msec() - last_tool_sound > 200:
+		last_tool_sound = Time.get_ticks_msec()
+		sound.cue("adjust")
+
+func _station_changed(detail: String) -> void:
+	if mode != "tool":
+		return
+	_leave_work()
+	sound.cue("accept")
+	_say(detail, 14)
 
 func _tool_submitted(success: bool, detail: String) -> void:
 	sound.cue("accept" if success else "reject")
@@ -307,11 +350,12 @@ func _tool_submitted(success: bool, detail: String) -> void:
 		_tool_hint(detail)
 		return
 	sample = detail
+	sheet_readings = instrument.inspection_record().duplicate(true)
 	jacket.set_station_filed(job,true)
-	instrument.set_filed(true)
-	var release := "Let go when ready." if touch else "E to let go."
-	_tool_hint("Noor — %s  %s" % [detail,release])
-	_save_watch()
+	values[job] = instrument.snapshot()
+	_leave_work()
+	tools_at_sites[job].set_filed(true)
+	_say("Noor — %s Bring the sheet back to Ellis." % detail, 12.0)
 
 func _say(words: String, seconds := 8.0) -> void:
 	callout = words
@@ -320,10 +364,7 @@ func _say(words: String, seconds := 8.0) -> void:
 	_update_helm()
 
 func _physics_process(delta: float) -> void:
-	if mode == "tool":
-		_settle_on_grip(delta)
-		return
-	if mode != "dive":
+	if mode not in ["dive","tool"]:
 		return
 	if check_resume_clearance:
 		check_resume_clearance = false
@@ -334,7 +375,6 @@ func _physics_process(delta: float) -> void:
 		query.exclude = [diver.get_rid()]
 		if not get_world_3d().direct_space_state.intersect_shape(query,1).is_empty():
 			diver.position = BELL
-			_face(_target())
 			_say("Ellis — You're on my line at the bell. I've kept your sheet.")
 	var axes := Vector2(
 		_key(KEY_D,KEY_RIGHT)-_key(KEY_A,KEY_LEFT),
@@ -349,135 +389,115 @@ func _physics_process(delta: float) -> void:
 	# Ellis tends a short excursion around this working level.
 	var offset := diver.position - BELL
 	diver.position = BELL+offset.limit_length(EXCURSION)
-	diver.position.y = clampf(diver.position.y,-8.5,7.0)
 	last_pos = diver.position
 	_align_camera()
+	_update_work()
+	if instrument != null and not last_hand_view.is_equal_approx(camera.global_transform):
+		last_hand_view = camera.global_transform
+		instrument.follow_view(camera)
+	var new_focus := move_toward(lamp_focus, 1.0 if instrument != null else 0.0, delta*2.5)
+	if lamp_focus != new_focus:
+		lamp_focus = new_focus
+		_focus_lamp(lamp_focus)
 	jacket.update_diver(diver.position)
+	var horizontal := Vector2(diver.position.x, diver.position.z)
+	var near_face := Geometry2D.get_closest_point_to_segment(horizontal,
+		Vector2(Jacket.A2.x, Jacket.A2.z), Vector2(Jacket.B4.x, Jacket.B4.z))
+	sound.set_distance_to_steel(horizontal.distance_to(near_face))
 	radio_time = maxf(0,radio_time-delta)
 	save_tick += delta
-	if save_tick>2.5:
+	if save_tick > (1.5 if work_dirty else 2.5):
 		save_tick = 0
 		_save_watch()
 	_update_helm()
-
-func _settle_on_grip(delta: float) -> void:
-	if work_hint_time > 0.0:
-		work_hint_time = maxf(0.0,work_hint_time-delta)
-		if work_hint_time == 0.0:
-			hud.update_work("")
-	brace_time = minf(brace_time + delta, brace_duration)
-	var blend := smoothstep(0.0,brace_duration,brace_time)
-	var stance: Vector3 = instrument.stance()
-	var point: Vector3 = instrument.focus_point()
-	var facing := Basis.looking_at((point-stance).normalized(),Vector3.UP)
-	var angles := facing.get_euler() + Vector3(work_look.y,work_look.x,0.0)
-	var rotation_goal := Basis.from_euler(angles)
-	camera.global_transform = Transform3D(brace_start.basis.slerp(rotation_goal,blend),brace_start.origin.lerp(stance,blend))
-	diver.position = camera.position
-	yaw = camera.rotation.y
-	pitch = camera.rotation.x
-	last_pos = diver.position
-	_focus_lamp(blend)
-	_set_light(lamp_on)
-	jacket.update_diver(diver.position)
 
 func _key(a: Key,b: Key) -> float:
 	return 1.0 if Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b) else 0.0
 
 func _update_helm() -> void:
-	if mode != "dive":
+	if mode not in ["dive","tool"]:
 		return
-	var offset := _target()-diver.position
-	var near := offset.length()<BELL_REACH if not sample.is_empty() else _can_work()
-	var relative := wrapf(yaw-atan2(-offset.x,-offset.z),-PI,PI)
-	var target := "Bell 2" if not sample.is_empty() else "%s  %s" % [TAGS[job],"Survey" if job==0 else "Clamp"]
-	var action := "BEARING"
-	if near:
-		action = "FILE SHEET" if not sample.is_empty() else "BRACE"
-	var words := callout if radio_time>0 else ""
-	hud.update_helm(126-diver.position.y,target,offset.length(),relative,action,words,near)
+	var at_bell := _heading_home() and diver.position.distance_to(BELL) < BELL_REACH
+	var words := callout if radio_time > 0.0 else work_hint
+	hud.update_helm(words, at_bell, not sample.is_empty(), instrument != null)
 
 func _look(delta: Vector2,sensitivity: float) -> void:
 	yaw = wrapf(yaw-delta.x*sensitivity,-PI,PI)
-	pitch = clampf(pitch-delta.y*sensitivity,-1.38,1.38)
+	pitch = clampf(pitch-delta.y*sensitivity,-1.565,1.565)
 	_align_camera()
 
 func _input(event: InputEvent) -> void:
-	if mode!="dive":
+	if mode not in ["dive","tool"]:
 		return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_look(event.relative,0.0025)
+	if event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION and not touch:
+		_look(event.relative, 0.0025)
 	if event is InputEventScreenTouch and not event.pressed:
-		if event.index==move_finger:
-			move_finger=-1
-			stick=Vector2.ZERO
-			hud.joystick=stick
-			hud.joystick_origin=Vector2.ZERO
-		if event.index==look_finger:
-			look_finger=-1
+		if event.index == move_finger:
+			move_finger = -1
+			stick = Vector2.ZERO
+			hud.joystick = stick
+			hud.joystick_origin = Vector2.ZERO
+			hud.queue_redraw()
+		if event.index == look_finger:
+			look_finger = -1
 	elif event is InputEventScreenDrag:
-		if event.index==move_finger:
-			stick=((event.position-move_origin)/53.0).limit_length(1)
-			hud.joystick=stick
-		elif event.index==look_finger:
-			_look(event.relative,0.005)
+		if event.index == move_finger:
+			stick = ((event.position-move_origin)/53.0).limit_length(1)
+			hud.joystick = stick
+			hud.queue_redraw()
+		elif event.index == look_finger:
+			_look(event.relative, 0.005)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode==KEY_ESCAPE:
+		if event.keycode == KEY_ESCAPE:
 			_back()
 			get_viewport().set_input_as_handled()
 			return
-		if mode in ["dive","tool"] and event.physical_keycode == KEY_F:
-			_command("lamp")
+		if mode in ["dive","tool"]:
+			match event.physical_keycode:
+				KEY_F: _command("lamp")
+				KEY_E: _context()
+				_: return
 			get_viewport().set_input_as_handled()
 			return
-		if mode in ["dive","tool"] and event.physical_keycode==KEY_E:
-			if mode=="tool":
-				_release_grip()
-			else:
-				_context()
+	if mode not in ["dive","tool"]:
+		return
+	# Leave space for the swimming thumb even when the diver is close to steel.
+	if touch and event is InputEventScreenTouch and event.pressed and move_finger < 0:
+		if event.position.x < hud.size.x*0.14 and event.position.y > hud.size.y*0.74:
+			_begin_swim_touch(event)
 			get_viewport().set_input_as_handled()
 			return
-	if mode == "tool":
-		_work_input(event)
+	if instrument != null and not event is InputEventKey:
+		var hand_event := event
+		if event is InputEventMouse:
+			if event.device == InputEvent.DEVICE_ID_EMULATION:
+				return
+			if not touch:
+				# The hand follows the same ray as the centre of the moving helmet.
+				hand_event = event.duplicate()
+				hand_event.position = get_viewport().get_visible_rect().get_center()
+		if instrument.handle_input(hand_event, camera):
+			last_hand_view = camera.global_transform
+			get_viewport().set_input_as_handled()
+			return
+	if not event is InputEventScreenTouch or not event.pressed:
 		return
-	if mode!="dive" or not event is InputEventScreenTouch or not event.pressed:
-		return
-	var p: Vector2=event.position
-	if p.x < hud.size.x*0.49 and move_finger<0:
-		move_finger=event.index
-		move_origin=p
-		hud.joystick_origin=p
-	elif p.x>=hud.size.x*0.49 and look_finger<0:
-		look_finger=event.index
+	if event.position.x < hud.size.x * 0.49 and move_finger < 0:
+		_begin_swim_touch(event)
+	elif look_finger < 0:
+		look_finger = event.index
 
-func _work_input(event: InputEvent) -> void:
-	if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
-		return
-	if brace_time < brace_duration:
-		return
-	if sample.is_empty() and instrument.handle_input(event,camera):
-		get_viewport().set_input_as_handled()
-		return
-	var motion := Vector2.ZERO
-	if event is InputEventScreenTouch:
-		if event.pressed:
-			work_look_finger = event.index
-		elif work_look_finger==event.index:
-			work_look_finger = -1
-	elif event is InputEventScreenDrag and event.index == work_look_finger:
-		motion = event.relative
-	elif event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_RIGHT:
-		motion = event.relative
-	if motion != Vector2.ZERO:
-		work_look.x = clampf(work_look.x-motion.x*0.002,-0.25,0.25)
-		work_look.y = clampf(work_look.y-motion.y*0.002,-0.18,0.18)
+func _begin_swim_touch(event: InputEventScreenTouch) -> void:
+	move_finger = event.index
+	move_origin = event.position
+	hud.joystick_origin = move_origin
+	hud.queue_redraw()
 
 func _back() -> void:
 	match mode:
-		"dive": _show("pause")
-		"tool": _release_grip()
+		"dive","tool": _command("pause")
 		"pause": _show("dive")
 		"log": _show("board")
 		"board": _show("title")
@@ -488,20 +508,25 @@ func _notification(what: int) -> void:
 	if what==NOTIFICATION_WM_GO_BACK_REQUEST:
 		_back()
 	if what in [NOTIFICATION_APPLICATION_PAUSED,NOTIFICATION_WM_CLOSE_REQUEST,NOTIFICATION_APPLICATION_FOCUS_OUT]:
-		_save_watch()
 		if mode in ["dive","tool"]:
 			_show("pause")
+		_save_watch()
 
 func _save_watch() -> void:
 	if save_path.is_empty() or not ready_for_save:
 		return
+	if mode == "tool" and instrument != null:
+		values[job] = instrument.snapshot()
 	var config := ConfigFile.new()
-	for field in ["watch","job","done","values","sample","history","last_pos","yaw","pitch","underway","lamp_on"]:
+	for field in ["watch","job","done","values","sample","sheet_readings","history","reports","last_pos","yaw","pitch","underway","returning","lamp_on"]:
 		config.set_value("watch",field,get(field))
 	if config.save(save_path+".tmp")==OK:
 		var error := DirAccess.rename_absolute(save_path+".tmp",save_path)
 		if error!=OK:
 			push_warning("Could not replace watch log (%d)"%error)
+		else:
+			work_dirty = false
+			save_tick = 0.0
 
 func _load_watch() -> void:
 	var config := ConfigFile.new()
@@ -512,7 +537,7 @@ func _load_watch() -> void:
 	if not saved_done is Array or saved_done.size()!=2 or not saved_values is Array or saved_values.size()!=2:
 		return
 	for pair in saved_values:
-		if not pair is Array or pair.size()!=2:
+		if not pair is Array:
 			return
 	lamp_on = bool(config.get_value("watch","lamp_on",true))
 	watch = maxi(1,int(config.get_value("watch","watch",1)))
@@ -520,12 +545,21 @@ func _load_watch() -> void:
 	values = saved_values
 	job = clampi(int(config.get_value("watch","job",-1)),-1,1)
 	sample = str(config.get_value("watch","sample",""))
+	var saved_sheet = config.get_value("watch","sheet_readings",[])
+	if saved_sheet is Array and not sample.is_empty():
+		sheet_readings = saved_sheet
 	var records = config.get_value("watch","history",[])
 	if records is Array:
 		history = records
+	var saved_reports = config.get_value("watch","reports",[])
+	if saved_reports is Array:
+		for report in saved_reports:
+			if report is Dictionary and report.get("entry") in history and report.get("readings") is Array:
+				reports.append(report)
 	var position_value = config.get_value("watch","last_pos",BELL)
 	if position_value is Vector3 and position_value.is_finite():
 		last_pos = BELL+(position_value-BELL).limit_length(EXCURSION)
 	yaw = float(config.get_value("watch","yaw",0))
-	pitch = clampf(float(config.get_value("watch","pitch",0)),-1.38,1.38)
+	pitch = clampf(float(config.get_value("watch","pitch",0)),-1.565,1.565)
 	underway = bool(config.get_value("watch","underway",false)) and job>=0 and not done[job]
+	returning = underway and bool(config.get_value("watch","returning", false))

@@ -24,6 +24,8 @@ var _beds: Dictionary[String, AudioStreamPlayer] = {}
 var _foley: Dictionary[String, AudioStreamPlayer] = {}
 var _outside := false
 var _mix := 0.0
+var _steel_gain := 0.0
+var _steel_goal := 0.0
 
 
 func _ready() -> void:
@@ -74,14 +76,21 @@ func cue(id: String) -> void:
 		_foley[id].play()
 
 
+func set_distance_to_steel(metres: float) -> void:
+	# The machinery in a jacket leg falls away as the diver fins out into the dark.
+	_steel_goal = lerpf(0.0, -16.0, smoothstep(1.0, 16.0, metres))
+
+
 func _process(delta: float) -> void:
 	var previous := _mix
+	var previous_gain := _steel_gain
+	_steel_gain = move_toward(_steel_gain, _steel_goal, delta * 12.0)
 	_mix = move_toward(_mix, 1.0 if _outside else 0.0, delta * 0.6)
-	if _mix != previous:
+	if _mix != previous or _steel_gain != previous_gain:
 		_update_levels()
 
 
 func _update_levels() -> void:
 	_beds["bell"].volume_db = LEVEL_DB["bell"] + linear_to_db(maxf(0.0001, 1.0 - _mix))
-	_beds["steel"].volume_db = LEVEL_DB["steel"] + linear_to_db(maxf(0.0001, _mix))
+	_beds["steel"].volume_db = LEVEL_DB["steel"] + _steel_gain + linear_to_db(maxf(0.0001, _mix))
 	_beds["breath"].volume_db = LEVEL_DB["breath"] + linear_to_db(maxf(0.0001, _mix))

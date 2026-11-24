@@ -4,12 +4,15 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 uniform sampler2D steel_albedo : source_color, repeat_enable, filter_linear_mipmap;
 uniform sampler2D corrosion : repeat_enable, filter_linear_mipmap;
 uniform vec4 coating : source_color = vec4(1.0);
+uniform bool leg_welds = false;
 varying vec3 position_world;
 varying vec3 world_normal;
+varying float upright;
 
 void vertex() {
 	position_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
+	upright = smoothstep(0.90, 0.97, abs(normalize(MODEL_MATRIX[1].xyz).y));
 }
 
 void fragment() {
@@ -23,17 +26,23 @@ void fragment() {
 	float broad = texture(corrosion,substrate.zy).r * axis.x
 		+ texture(corrosion,substrate.xz).r * axis.y + texture(corrosion,substrate.xy).r * axis.z;
 	float freckles = texture(corrosion,vec2(p.x + 0.43*p.z, p.y + 0.27*p.z)*0.58).r;
-	float exposure = broad + (freckles-0.50)*0.52;
-	float blister = smoothstep(0.50,0.63,exposure);
-	float scale_edge = smoothstep(0.58,0.63,exposure) * (1.0-smoothstep(0.64,0.70,exposure));
-	vec3 undercoat = steel * vec3(0.94,0.77,0.65);
-	vec3 iron = steel * vec3(1.13,0.77,0.59) * (0.70 + freckles*0.52);
-	vec3 surface = mix(steel*coating.rgb, undercoat, blister*0.72);
-	ALBEDO = mix(surface,iron,smoothstep(0.64,0.73,exposure)) + scale_edge*vec3(0.014,0.012,0.007);
+	// The welds on the legs trap rust. Long, interrupted trails spread below the lip.
+	float streaks = texture(corrosion, vec2(p.x + 0.67*p.z, p.y) * vec2(0.64, 0.088)).r;
+	float below_weld = mod(2.9 - p.y, 9.13);
+	float trail = leg_welds ? upright * smoothstep(0.43,0.78,streaks)
+		* (1.0 - smoothstep(0.03, 0.32 + 2.45*streaks, below_weld)) : 0.0;
+	float exposure = broad + (freckles-0.50)*0.52 + trail*0.32;
+	float blister = smoothstep(0.48,0.62,exposure);
+	float scale_edge = smoothstep(0.54,0.60,exposure) * (1.0-smoothstep(0.62,0.70,exposure));
+	float steel_luma = dot(steel, vec3(0.22, 0.68, 0.10));
+	vec3 undercoat = mix(steel, vec3(steel_luma), 0.48) * vec3(0.66,0.56,0.42);
+	vec3 iron = mix(steel*vec3(0.92,0.67,0.50),
+		steel_luma*mix(vec3(0.49,0.26,0.16), vec3(1.04,0.65,0.36), freckles), 0.70);
+	vec3 surface = mix(steel*coating.rgb*0.90, undercoat, blister*0.87);
+	ALBEDO = mix(surface,iron,smoothstep(0.59,0.71,exposure)) + scale_edge*vec3(0.020,0.012,0.006);
 	// Use the existing worn texture as a shallow relief map. Derivatives keep
 	// the relief in metres across different-sized piles and tapered braces.
-	float steel_luma = dot(steel, vec3(0.22, 0.68, 0.10));
-	float height = 0.020*steel_luma + 0.010*blister + 0.0025*scale_edge;
+	float height = 0.022*steel_luma + 0.015*blister + 0.004*scale_edge;
 	vec3 px = dFdx(VERTEX);
 	vec3 py = dFdy(VERTEX);
 	vec3 u = cross(py,NORMAL);

@@ -39,6 +39,7 @@ func _ready() -> void:
 	_hose_setup()
 	_lamp_haze()
 	_suspended_particles()
+	add_child(preload("res://world/jacket_fish.gd").new())
 	update_diver(BELL)
 
 func _material(key: String, color: String, metal := 0.0, glow := 0.0, texture_path := "") -> void:
@@ -50,6 +51,7 @@ func _material(key: String, color: String, metal := 0.0, glow := 0.0, texture_pa
 		var skin := ShaderMaterial.new()
 		skin.shader = preload("res://world/worn_steel.gdshader")
 		skin.set_shader_parameter("coating",Color(color))
+		skin.set_shader_parameter("leg_welds",key == "jacket")
 		skin.set_shader_parameter("steel_albedo",preload("res://art/jacket.webp"))
 		skin.set_shader_parameter("corrosion",preload("res://world/corrosion.tres"))
 		_materials[key] = skin
@@ -72,15 +74,19 @@ func _materials_setup() -> void:
 	_material("jacket", "b3b2a4", 0.11, 0.0, steel)
 	_material("shadowsteel", "777f74", 0.09, 0.0, steel)
 	_material("pipe", "a89a88", 0.12, 0.0, steel)
-	_material("galvanized", "879a96", 0.18)
-	_material("edge", "485953", 0.13)
-	_material("iron", "364442", 0.15)
+	_service_finish("galvanized", "899692", 0.43)
+	_service_finish("edge", "4d5953", 0.36)
+	_service_finish("iron", "3c4441", 0.34)
 	_material("rubber", "222d2b")
 	_material("brass", "bb8554", 0.14)
 	_material("chalk", "d1c8aa", 0.06)
 	_material("yellow", "efbb6c", 0.05, 0.0, enamel)
 	_material("tag_enamel", "b8b69e", 0.05, 0.0, enamel)
-	_material("hull", "efad55", 0.09, 0.0, enamel)
+	var hull := ShaderMaterial.new()
+	hull.shader = preload("res://world/bell_paint.gdshader")
+	hull.set_shader_parameter("enamel",preload("res://art/enamel.webp"))
+	hull.set_shader_parameter("pitting",preload("res://world/corrosion.tres"))
+	_materials["hull"] = hull
 	_material("maroon", "94634d", 0.08)
 	_material("navy", "2b494b", 0.10)
 	_material("glass", "90bcb5", 0.19, 0.13)
@@ -118,19 +124,24 @@ func _service_finish(key: String, pigment: String, metal: float) -> void:
 func _environment() -> void:
 	var volume := WorldEnvironment.new()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("030809")
+	var water_light := ShaderMaterial.new()
+	water_light.shader = preload("res://world/deep_water.gdshader")
+	var water_sky := Sky.new()
+	water_sky.sky_material = water_light
+	env.sky = water_sky
+	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("294247")
-	env.ambient_light_energy = 0.055
+	env.ambient_light_energy = 0.047
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_DEPTH
 	env.fog_depth_begin = 0.4
-	env.fog_depth_end = 35.0
-	env.fog_depth_curve = 0.94
+	env.fog_depth_end = 32.0
+	env.fog_depth_curve = 0.92
 	env.fog_light_color = Color("050a0c")
 	env.fog_light_energy = 0.85
+	env.fog_sky_affect = 0.78
 	volume.environment = env
 	add_child(volume)
 
@@ -304,6 +315,16 @@ func _jacket() -> void:
 			for side in [-0.27,0.27]:
 				var end: Vector3 = rung + tangent*side
 				_tube(end-outward*0.47,end,0.04,"iron",8)
+	# The marked ladder is a nearby vertical reference. Below the last visible
+	# set of rungs the diver still sees the leg disappear into open water.
+	for depth in [116,121,126,131,136,141]:
+		var h: float = 126.0-depth
+		var rung := face+slope*h
+		var yaw := atan2(outward.x,outward.z)
+		var tag := rung+tangent*0.65
+		var attitude := Basis(UP,yaw)
+		_place("box","carrier_enamel",Transform3D(attitude.scaled_local(Vector3(0.57,0.23,0.028)),tag))
+		_label(tag+outward*0.018,"%d m" % depth,0.15,Color("323934"),yaw)
 	var low := _leg_at(0,0,-6.4)
 	var high := _leg_at(1,0,16.6)
 	_growth(_leg_at(0,0,-17), _leg_at(0,0,19), LEG_RADIUS, 2238, 70)
@@ -435,13 +456,6 @@ func _label(at: Vector3, text: String, height: float, tint: Color, yaw := 0.0) -
 	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(label)
 
-func _studs(center: Vector3, radius: float, count: int, stud: float, mat: String) -> void:
-	for i in count:
-		var angle := TAU * float(i) / count
-		var p := center + Vector3(cos(angle),sin(angle),0.0) * radius
-		_band(p - FRONT*stud*0.4, FRONT, stud*0.68, stud*1.42, "washer", 12)
-		_band(p, FRONT, stud, stud, mat, 6)
-
 func _rail(a: Vector3, b: Vector3, z: float, radius := 0.04) -> void:
 	var aa := a + FRONT * z
 	var bb := b + FRONT * z
@@ -451,24 +465,10 @@ func _rail(a: Vector3, b: Vector3, z: float, radius := 0.04) -> void:
 
 func _station_a() -> void:
 	var hub := Vector3(-4,0,-5.99)
-	# The wall probe lands on an exposed inspection pad in a ring of original coating.
-	_band(hub, FRONT, 0.31, 0.64, "flange", 24)
-	_band(hub + FRONT*0.18, FRONT, 0.10, 0.55, "cast", 24)
-	_band(hub + FRONT*0.25, FRONT, 0.07, 0.43, "flange", 24)
-	_band(hub + FRONT*0.30, FRONT, 0.045, 0.315, "washer", 24)
-	_band(hub + FRONT*0.33, FRONT, 0.034, 0.25, "washer", 24)
-	_band(hub + FRONT*0.355, FRONT, 0.014, 0.21, "scrubbed", 28)
-	# Faint punch marks on the outer face identify the surveyed arc.
-	for k in 3:
-		var angle := -2.2 + k*0.085
-		var radial := Vector3(cos(angle),sin(angle),0)
-		var nick := hub + FRONT*0.288 + radial*0.399
-		_tube(nick-radial*0.018,nick+radial*0.018,0.0035,"handhold",5)
-	_studs(hub + FRONT*0.246, 0.493, 10, 0.047, "stud")
 	_band(hub + UP*1.09 - FRONT*0.59, UP, 0.23, 0.73, "edge", 16)
 	_plate(hub + Vector3(0,1.15,0.12), "A2", 1.16, 0.54)
-	_rail(hub + Vector3(-0.66,-0.53,-0.09), hub + Vector3(-0.66,0.55,-0.09), 0.32)
-	_rail(hub + Vector3(0.66,-0.53,-0.09), hub + Vector3(0.66,0.55,-0.09), 0.32)
+	_rail(hub + Vector3(-1.04,-0.53,-0.09), hub + Vector3(-1.04,0.55,-0.09), 0.32)
+	_rail(hub + Vector3(1.04,-0.53,-0.09), hub + Vector3(1.04,0.55,-0.09), 0.32)
 	_work_light(hub + Vector3(-0.88,1.68,0.20), false)
 	_led(hub + Vector3(0.76,0.53,0.11))
 	# Two narrow clean scars left by a previous carrier. Exposed metal has no growth.
@@ -554,6 +554,7 @@ func _scatter(at: Vector3, radius: float, warm: bool) -> void:
 
 func _bell() -> void:
 	var center := Vector3(-4.10,0.40,7.4)
+	_materials["hull"].set_shader_parameter("hull_center", center)
 	_band(center,UP,2.5,1.42,"hull",20)
 	_dome(center+UP*1.20,Vector3(2.83,1.31,2.83),"hull")
 	_dome(center-UP*1.20,Vector3(2.83,1.38,2.83),"hull")
@@ -593,6 +594,18 @@ func _bell() -> void:
 	hull_shape.radius = 1.43
 	hull_shape.height = 3.25
 	_solid(hull_shape,Basis.IDENTITY,center)
+	# The suspended bell guide weight provides one last human-sized shape when
+	# looking below the hatch. Past the frame there is no ground plane.
+	var weight := center-UP*6.3
+	for x in [-1.58,1.58]:
+		var wire_foot := weight+Vector3(x,0.18,0.08)
+		_tube(wire_foot, wire_foot+UP*74,0.035,"galvanized",8)
+		_band(wire_foot+UP*0.17,UP,0.30,0.075,"iron",8)
+		_box(weight+Vector3(x,0,0.08),Vector3(0.29,0.31,1.13),"iron")
+	for z in [-0.34,0.48]:
+		_box(weight+Vector3(0,0,z),Vector3(3.27,0.20,0.24),"shadowsteel")
+	for x in [-0.96,-0.48,0.0,0.48,0.96]:
+		_box(weight+Vector3(x,0,0.08),Vector3(0.20,0.17,1.01),"edge")
 	for side in [-1.0,1.0]:
 		_box(center+Vector3(side*0.79,0.90,-1.18),Vector3(0.38,0.25,0.18),"iron")
 		_box(center+Vector3(side*0.79,0.90,-1.30),Vector3(0.26,0.16,0.08),"amber_bulb")
@@ -680,7 +693,7 @@ func _lamp_haze() -> void:
 
 func update_lamp_focus(half_angle: float, work := 0.0) -> void:
 	_helmet_medium.set_shader_parameter("slope",tan(deg_to_rad(half_angle)))
-	_helmet_medium.set_shader_parameter("density",lerpf(0.16,0.085,work))
+	_helmet_medium.set_shader_parameter("density",lerpf(0.127,0.079,work))
 
 func update_lamp(pose: Transform3D, enabled: bool) -> void:
 	_lamp_volume.global_transform = pose

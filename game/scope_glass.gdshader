@@ -4,6 +4,7 @@ uniform sampler2D wear : repeat_enable, filter_linear_mipmap;
 uniform float gate = 3.0;
 uniform float wall = 9.0;
 uniform bool contact = false;
+uniform float coupling : hint_range(0.0,1.0) = 1.0;
 float echo(float x,float centre,float width,float amplitude) {
 	return amplitude * pow(max(0.0,1.0-abs(x-centre)/width),1.55);
 }
@@ -14,7 +15,9 @@ void fragment() {
 	float peaks=grass+echo(x,.9,.5,.72);
 	if (contact) {
 		peaks+=echo(x,3.8,.65,.065)+echo(x,5.4,.5,.042);
-		peaks+=echo(x,wall,.83,.63)+echo(x,wall*2.0,.96,.43);
+		// A partly seated probe scatters the pulse and weakens both wall returns.
+		float scatter = (1.0-coupling)*.063*abs(sin(x*7.5+sin(TIME*5.))*cos(x*3.3-TIME));
+		peaks+=scatter+coupling*(echo(x,wall,.83,.63)+echo(x,wall*2.0,.96,.43));
 	}
 	float trace=.82-peaks;
 	float w=max(fwidth(trace-p.y)*.95,.010);
