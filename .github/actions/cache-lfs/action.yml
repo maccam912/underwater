@@ -1,0 +1,29 @@
+name: Restore and materialize Git LFS assets
+description: Reuse cached LFS objects before fetching missing content for the checked-out commit.
+runs:
+  using: composite
+  steps:
+    - name: Fingerprint LFS objects
+      id: lfs-manifest
+      shell: bash
+      run: |
+        oid_list=$(git lfs ls-files --long HEAD | cut -d ' ' -f1 | LC_ALL=C sort -u | git hash-object --stdin)
+        printf 'digest=%s\n' "$oid_list" >> "$GITHUB_OUTPUT"
+    - name: Restore LFS objects
+      id: lfs-cache
+      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: .git/lfs/objects
+        key: lfs-objects-v1-${{ runner.os }}-${{ steps.lfs-manifest.outputs.digest }}
+        restore-keys: lfs-objects-v1-${{ runner.os }}-
+    - name: Materialize LFS files
+      shell: bash
+      run: |
+        git lfs install --local --skip-repo
+        git lfs pull
+    - name: Save LFS objects
+      if: steps.lfs-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: .git/lfs/objects
+        key: ${{ steps.lfs-cache.outputs.cache-primary-key }}
